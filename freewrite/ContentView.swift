@@ -76,6 +76,44 @@ struct HeartEmoji: Identifiable {
 }
 
 struct ContentView: View {
+    private struct WritingFontPreset {
+        let label: String
+        let candidates: [String]
+    }
+
+    private enum FounderTool: String, CaseIterable, Identifiable {
+        case explore = "Explore"
+        case assumptions = "Assumptions"
+        case customerStory = "Customer Story"
+        case opportunityMap = "Opportunity Map"
+        case pmfSignal = "PMF Signal"
+        case memo = "Memo"
+
+        var id: String { rawValue }
+
+        var icon: String {
+            switch self {
+            case .explore: return "sparkles"
+            case .assumptions: return "checklist"
+            case .customerStory: return "person.text.rectangle"
+            case .opportunityMap: return "map"
+            case .pmfSignal: return "waveform.path.ecg"
+            case .memo: return "doc.text"
+            }
+        }
+
+        var lane: String {
+            switch self {
+            case .explore: return "Synthesize"
+            case .assumptions: return "Validate"
+            case .customerStory: return "Research"
+            case .opportunityMap: return "Map"
+            case .pmfSignal: return "Measure"
+            case .memo: return "Decide"
+            }
+        }
+    }
+
     private struct VideoPermissionPopoverItem: Identifiable {
         let id = UUID()
         let message: String
@@ -87,8 +125,8 @@ struct ContentView: View {
     @State private var text: String = ""  // Remove initial welcome text since we'll handle it in createNewEntry
     
     @State private var isFullscreen = false
-    @State private var selectedFont: String = "Lato-Regular"
-    @State private var currentRandomFont: String = ""
+    @State private var selectedFontPresetIndex = 0
+    @State private var selectedFont: String = ContentView.resolveFontName(["Georgia", "Iowan Old Style", "Times New Roman"])
     @State private var timeRemaining: Int = 900  // Changed to 900 seconds (15 minutes)
     @State private var timerIsRunning = false
     @State private var isHoveringTimer = false
@@ -107,9 +145,10 @@ struct ContentView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var selectedEntryId: UUID? = nil
     @State private var hoveredEntryId: UUID? = nil
-    @State private var isHoveringChat = false  // Add this state variable
-    @State private var showingChatMenu = false
-    @State private var chatMenuAnchor: CGPoint = .zero
+    @State private var isHoveringExplore = false
+    @State private var showingFounderTools = false
+    @State private var selectedFounderTool: FounderTool = .explore
+    @State private var didCopyFounderTool = false
     @State private var showingSidebar = false  // Add this state variable
     @State private var hoveredTrashId: UUID? = nil
     @State private var hoveredExportId: UUID? = nil
@@ -117,17 +156,11 @@ struct ContentView: View {
     @State private var isHoveringNewEntry = false
     @State private var isHoveringClock = false
     @State private var isHoveringHistory = false
-    @State private var isHoveringHistoryText = false
-    @State private var isHoveringHistoryPath = false
-    @State private var isHoveringHistoryArrow = false
     @State private var isHoveringCopyTranscript = false
     @State private var colorScheme: ColorScheme = .light // Add state for color scheme
     @State private var isHoveringThemeToggle = false // Add state for theme toggle hover
-    @State private var didCopyPrompt: Bool = false // Add state for copy prompt feedback
     @State private var didCopyTranscript: Bool = false
     @State private var selectedVideoHasTranscript = false
-    @State private var backspaceDisabled = false // Add state for backspace toggle
-    @State private var isHoveringBackspaceToggle = false // Add state for backspace toggle hover
     @State private var showingVideoRecording = false // Add state for video recording view
     @State private var isHoveringVideoButton = false // Add state for video button hover
     @State private var currentVideoURL: URL? = nil // Add state for current video being viewed
@@ -139,19 +172,28 @@ struct ContentView: View {
     @State private var videoPermissionPopoverFallbackMessage: String? = nil
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     let entryHeight: CGFloat = 40
+    let editorHorizontalPadding: CGFloat = 56
     
-    let availableFonts = NSFontManager.shared.availableFontFamilies
-    let standardFonts = ["Lato-Regular", "Arial", ".AppleSystemUIFont", "Times New Roman"]
+    private static let writingFontPresets: [WritingFontPreset] = [
+        WritingFontPreset(label: "Serif", candidates: ["Georgia", "Iowan Old Style", "Times New Roman"]),
+        WritingFontPreset(label: "Iowan", candidates: ["Iowan Old Style", "Athelas", "Hoefler Text", "Georgia"]),
+        WritingFontPreset(label: "Avenir", candidates: ["Avenir Next", "Avenir", "Helvetica Neue", ".AppleSystemUIFont"]),
+        WritingFontPreset(label: "Lato", candidates: ["Lato-Regular", "Lato", "Helvetica Neue", ".AppleSystemUIFont"]),
+        WritingFontPreset(label: "Mono", candidates: ["Menlo", "Monaco", "Courier Prime", "Courier"])
+    ]
+
     let fontSizes: [CGFloat] = [16, 18, 20, 22, 24, 26]
-    let placeholderOptions = [
-        "Begin writing",
-        "Pick a thought and go",
-        "Start typing",
-        "What's on your mind",
-        "Just start",
-        "Type your first thought",
-        "Start with one sentence",
-        "Just say it"
+    private let founderPlaceholderOptions = [
+        "What customer signal keeps bothering you",
+        "What problem did you see today",
+        "What are users doing manually",
+        "What assumption feels shaky",
+        "What would make this obviously useful",
+        "What did a customer say that stuck",
+        "What are you avoiding because it is messy",
+        "What tiny experiment would teach you the most",
+        "What do you know that the market is missing",
+        "Where is the wedge"
     ]
     
     // Add file manager and save timer
@@ -199,30 +241,34 @@ struct ContentView: View {
     }()
     
     // Add shared prompt constant
-    private let aiChatPrompt = """
-    below is my journal entry. wyt? talk through it with me like a friend. don't therpaize me and give me a whole breakdown, don't repeat my thoughts with headings. really take all of this, and tell me back stuff truly as if you're an old homie.
-    
-    Keep it casual, dont say yo, help me make new connections i don't see, comfort, validate, challenge, all of it. dont be afraid to say a lot. format with markdown headings if needed.
+    private let founderAIChatPrompt = """
+    I am a founder freewriting to generate startup clarity. Do not treat this like polished strategy. Treat it like raw signal.
 
-    do not just go through every single thing i say, and say it back to me. you need to proccess everythikng is say, make connections i don't see it, and deliver it all back to me as a story that makes me feel what you think i wanna feel. thats what the best therapists do.
+    First, read through the mess without judging grammar, structure, or contradictions. Then give me a concise founder debrief:
+    - the strongest customer/problem signal
+    - the hidden assumption I should test
+    - the sharpest wedge or ICP implied by what I wrote
+    - one small experiment I can run in the next 48 hours
+    - one sentence I could use as a clearer founder memo or product thesis
 
-    ideally, you're style/tone should sound like the user themselves. it's as if the user is hearing their own tone but it should still feel different, because you have different things to say and don't just repeat back they say.
+    Be direct and practical. Preserve the useful weirdness. Do not over-sanitize the idea.
 
-    else, start by saying, "hey, thanks for showing me this. my thoughts:"
-        
-    my entry:
+    My founder freewrite:
     """
-    
-    private let claudePrompt = """
-    Take a look at my journal entry below. I'd like you to analyze it and respond with deep insight that feels personal, not clinical.
-    Imagine you're not just a friend, but a mentor who truly gets both my tech background and my psychological patterns. I want you to uncover the deeper meaning and emotional undercurrents behind my scattered thoughts.
-    Keep it casual, dont say yo, help me make new connections i don't see, comfort, validate, challenge, all of it. dont be afraid to say a lot. format with markdown headings if needed.
-    Use vivid metaphors and powerful imagery to help me see what I'm really building. Organize your thoughts with meaningful headings that create a narrative journey through my ideas.
-    Don't just validate my thoughts - reframe them in a way that shows me what I'm really seeking beneath the surface. Go beyond the product concepts to the emotional core of what I'm trying to solve.
-    Be willing to be profound and philosophical without sounding like you're giving therapy. I want someone who can see the patterns I can't see myself and articulate them in a way that feels like an epiphany.
-    Start with 'hey, thanks for showing me this. my thoughts:' and then use markdown headings to structure your response.
 
-    Here's my journal entry:
+    private let founderClaudePrompt = """
+    I am a founder using freewriting to find startup signal before I prematurely plan. Read this as raw founder thinking, not as a finished memo.
+
+    Help me extract the business clarity underneath it:
+    - what problem or customer pain is most alive here
+    - what founder insight or unfair advantage might be hiding here
+    - what assumption is dangerous if false
+    - what I should ask customers next
+    - what tiny build, sales, or research action would create evidence fast
+
+    Keep it candid, specific, and founder-to-founder. If the entry is scattered, find the pattern instead of summarizing every line.
+
+    My founder freewrite:
     """
     
     // Initialize with saved theme preference if available
@@ -675,10 +721,6 @@ struct ContentView: View {
         }
     }
     
-    var randomButtonTitle: String {
-        return currentRandomFont.isEmpty ? "Random" : "Random [\(currentRandomFont)]"
-    }
-
     private func startVideoRecordingPreflight() {
         guard !isPreparingVideoRecording, !showingVideoRecording else {
             return
@@ -841,11 +883,327 @@ struct ContentView: View {
             return isHoveringTimer ? (colorScheme == .light ? .black : .white) : (colorScheme == .light ? .gray : .gray.opacity(0.8))
         }
     }
+
+    private var activeAIChatPrompt: String {
+        founderAIChatPrompt
+    }
+
+    private var activeClaudePrompt: String {
+        founderClaudePrompt
+    }
+
+    private func refreshPlaceholder() {
+        placeholderText = founderPlaceholderOptions.randomElement() ?? "What customer signal keeps bothering you"
+    }
     
     var lineHeight: CGFloat {
         let font = NSFont(name: selectedFont, size: fontSize) ?? .systemFont(ofSize: fontSize)
         let defaultLineHeight = getLineHeight(font: font)
-        return (fontSize * 1.5) - defaultLineHeight
+        return max(0, (fontSize * 1.42) - defaultLineHeight)
+    }
+
+    var writingColumnWidth: CGFloat {
+        min(720, max(560, fontSize * 36))
+    }
+
+    var editorBackgroundColor: Color {
+        colorScheme == .light
+            ? Color(red: 0.985, green: 0.982, blue: 0.965)
+            : Color(red: 0.045, green: 0.047, blue: 0.050)
+    }
+
+    var editorTextColor: Color {
+        colorScheme == .light
+            ? Color(red: 0.18, green: 0.18, blue: 0.17)
+            : Color(red: 0.88, green: 0.87, blue: 0.84)
+    }
+
+    static func resolveFontName(_ candidates: [String]) -> String {
+        candidates.first { NSFont(name: $0, size: 18) != nil } ?? ".AppleSystemUIFont"
+    }
+
+    private func selectWritingFont(at index: Int) {
+        let clampedIndex = index % ContentView.writingFontPresets.count
+        selectedFontPresetIndex = clampedIndex
+        selectedFont = ContentView.resolveFontName(ContentView.writingFontPresets[clampedIndex].candidates)
+    }
+
+    private func toggleWritingFont() {
+        let currentFont = selectedFont
+        for offset in 1...ContentView.writingFontPresets.count {
+            let nextIndex = (selectedFontPresetIndex + offset) % ContentView.writingFontPresets.count
+            let nextFont = ContentView.resolveFontName(ContentView.writingFontPresets[nextIndex].candidates)
+            selectedFontPresetIndex = nextIndex
+            selectedFont = nextFont
+
+            if nextFont != currentFont || offset == ContentView.writingFontPresets.count {
+                break
+            }
+        }
+    }
+
+    private func founderToolSummary(for sourceText: String) -> String {
+        let cleaned = sourceText
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !cleaned.isEmpty else {
+            return "No founder signal yet. Write for a few minutes, then come back."
+        }
+
+        let separators = CharacterSet(charactersIn: ".!?")
+        let sentences = cleaned
+            .components(separatedBy: separators)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let keywordSentence = sentences.first { sentence in
+            let lowercased = sentence.lowercased()
+            return ["customer", "user", "problem", "pain", "manual", "assumption", "market", "wedge", "experiment"].contains { lowercased.contains($0) }
+        }
+
+        return keywordSentence ?? sentences.first ?? String(cleaned.prefix(220))
+    }
+
+    private func founderToolMarkdown(for tool: FounderTool, sourceText: String) -> String {
+        let trimmed = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let signal = founderToolSummary(for: trimmed)
+        let hasSource = !trimmed.isEmpty
+
+        switch tool {
+        case .explore:
+            return """
+            # Founder Explore
+
+            ## Raw Signal
+            \(signal)
+
+            ## Customer Pain
+            - What concrete struggle, workaround, delay, cost, or frustration is visible here?
+
+            ## Founder Hypothesis
+            - I believe this matters because:
+            - I believe the first customer is:
+            - I believe the current workaround is:
+
+            ## Riskiest Assumption
+            - The idea breaks if:
+
+            ## Next 48-Hour Test
+            - Talk to:
+            - Ask:
+            - Evidence that would change my mind:
+            """
+
+        case .assumptions:
+            return """
+            # Assumption Ledger
+
+            | Assumption | Evidence Today | Confidence | Next Test | Status |
+            | --- | --- | --- | --- | --- |
+            | Customer has this problem often | \(hasSource ? signal : "No evidence yet") | Low | Ask 5 target customers for a recent story | Untested |
+            | Current workaround is painful enough to switch |  | Low | Capture workaround, cost, and urgency | Untested |
+            | This wedge is narrow enough to win early users |  | Low | Define one ICP and one painful use case | Untested |
+            | A small MVP can prove value quickly |  | Low | Build or fake the smallest proof | Untested |
+            """
+
+        case .customerStory:
+            return """
+            # Customer Story Capture
+
+            ## Interview Prompt
+            Tell me about the last time you dealt with this problem.
+
+            ## Capture
+            - Customer:
+            - Segment / role:
+            - Situation:
+            - Trigger:
+            - Current workaround:
+            - Pain / cost:
+            - Quote:
+            - Urgency signal:
+
+            ## From This Freewrite
+            \(signal)
+            """
+
+        case .opportunityMap:
+            return """
+            # Opportunity Map
+
+            ## Outcome
+            - The business/customer outcome I want to move:
+
+            ## Opportunity Space
+            - Need / pain / desire: \(signal)
+            - Related customer moment:
+            - Segment affected:
+
+            ## Possible Solutions
+            - Solution 1:
+            - Solution 2:
+            - Solution 3:
+
+            ## Assumption Tests
+            - Test the customer pain:
+            - Test willingness to switch/pay:
+            - Test MVP usefulness:
+            """
+
+        case .pmfSignal:
+            return """
+            # PMF Signal
+
+            ## Sean Ellis / Superhuman Question
+            How would you feel if you could no longer use this product?
+            - Very disappointed
+            - Somewhat disappointed
+            - Not disappointed
+
+            ## Follow-Ups
+            - What type of person would most benefit?
+            - What is the main benefit you receive?
+            - How can we improve it for you?
+
+            ## From This Freewrite
+            - Likely champion segment:
+            - Loved benefit:
+            - Blocker:
+            - Weekly PMF score:
+            """
+
+        case .memo:
+            return """
+            # Founder Memo
+
+            ## Thesis
+            \(signal)
+
+            ## Customer
+            - Who:
+            - Moment:
+            - Pain:
+
+            ## Why Now
+            -
+
+            ## Wedge
+            -
+
+            ## Evidence
+            - From freewrite: \(hasSource ? signal : "No evidence yet")
+            - From customers:
+
+            ## Next Decision
+            -
+            """
+        }
+    }
+
+    private func founderToolDescription(for tool: FounderTool) -> String {
+        switch tool {
+        case .explore:
+            return "Turn raw founder notes into pain, hypothesis, risk, and a 48-hour test."
+        case .assumptions:
+            return "Convert uncertainty into a visible ledger of evidence, confidence, and tests."
+        case .customerStory:
+            return "Prepare a customer interview capture sheet from the signal you already wrote."
+        case .opportunityMap:
+            return "Map outcome, opportunity space, solution options, and assumption tests."
+        case .pmfSignal:
+            return "Frame product-market-fit survey prompts and weekly signal tracking."
+        case .memo:
+            return "Shape the raw thought into a concise founder memo for decisions."
+        }
+    }
+
+    private func founderToolSourceTitle() -> String {
+        if currentVideoURL != nil {
+            return selectedVideoHasTranscript ? "Video transcript" : "Video selected"
+        }
+        return "Current entry"
+    }
+
+    private func founderToolSourceStatus(for sourceText: String) -> String {
+        let characterCount = sourceText.trimmingCharacters(in: .whitespacesAndNewlines).count
+        guard characterCount > 0 else {
+            return currentVideoURL != nil ? "No transcript found. Blank template." : "No writing yet. Blank template."
+        }
+        return "\(characterCount) characters loaded"
+    }
+
+    private func founderToolPrompt(for tool: FounderTool, sourceText: String) -> String {
+        let source = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let draft = founderToolMarkdown(for: tool, sourceText: source)
+        return """
+        You are a practical founder research partner. Use the source notes below to produce a sharper \(tool.rawValue) artifact in concise markdown.
+
+        Rules:
+        - Keep the useful weirdness from the raw notes.
+        - Separate evidence from assumptions.
+        - Make the next action small enough to do in 48 hours.
+        - Do not invent customer facts that are not in the source.
+
+        Current local draft:
+        \(draft)
+
+        Source notes:
+        \(source.isEmpty ? "No source notes yet. Return a clean blank template." : source)
+        """
+    }
+
+    private func copyFounderToolPrompt() {
+        let prompt = founderToolPrompt(for: selectedFounderTool, sourceText: currentChatSourceText())
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(prompt, forType: .string)
+        didCopyFounderTool = true
+    }
+
+    private func openFounderToolPromptInChatGPT() {
+        openFounderToolPrompt(baseURL: "https://chat.openai.com/?prompt=")
+    }
+
+    private func openFounderToolPromptInClaude() {
+        openFounderToolPrompt(baseURL: "https://claude.ai/new?q=")
+    }
+
+    private func openFounderToolPrompt(baseURL: String) {
+        let prompt = founderToolPrompt(for: selectedFounderTool, sourceText: currentChatSourceText())
+        guard let encodedPrompt = prompt.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return }
+        let fullURLString = baseURL + encodedPrompt
+        if fullURLString.count > 6000 {
+            copyFounderToolPrompt()
+            return
+        }
+        if let url = URL(string: fullURLString) {
+            showingFounderTools = false
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func copyFounderToolOutput() {
+        let output = founderToolMarkdown(for: selectedFounderTool, sourceText: currentChatSourceText())
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(output, forType: .string)
+        didCopyFounderTool = true
+    }
+
+    private func saveFounderToolOutputAsEntry() {
+        let newEntry = HumanEntry.createNew()
+        let output = founderToolMarkdown(for: selectedFounderTool, sourceText: currentChatSourceText())
+        entries.insert(newEntry, at: 0)
+        selectedEntryId = newEntry.id
+        currentVideoURL = nil
+        selectedVideoHasTranscript = false
+        didCopyTranscript = false
+        text = output
+        saveEntry(entry: newEntry)
+        updatePreviewText(for: newEntry)
+        showingFounderTools = false
     }
     
     var fontSizeButtonTitle: String {
@@ -861,9 +1219,38 @@ struct ContentView: View {
         return colorScheme == .light ? Color.primary : Color.white
     }
 
+    private func sidebarRowFill(for entry: HumanEntry) -> Color {
+        if selectedEntryId == entry.id {
+            return colorScheme == .light ? Color.white.opacity(0.14) : Color.white.opacity(0.08)
+        }
+        if hoveredEntryId == entry.id {
+            return colorScheme == .light ? Color.white.opacity(0.08) : Color.white.opacity(0.04)
+        }
+        return Color.clear
+    }
+
+    private func selectHistoryEntry(_ entry: HumanEntry) {
+        guard selectedEntryId != entry.id else { return }
+        historyDebug("ROW TAP \(debugEntrySummary(entry))")
+
+        if let currentId = selectedEntryId,
+           let currentEntry = entries.first(where: { $0.id == currentId }),
+           currentEntry.entryType == .text {
+            saveEntry(entry: currentEntry)
+        }
+
+        guard let targetEntry = entries.first(where: { $0.id == entry.id }) else {
+            historyDebug("ROW TAP target missing id=\(entry.id.uuidString)")
+            return
+        }
+
+        selectedEntryId = targetEntry.id
+        historyDebug("ROW TAP resolved target \(debugEntrySummary(targetEntry))")
+        loadEntry(entry: targetEntry)
+    }
+
     
     var body: some View {
-        let buttonBackground = colorScheme == .light ? Color.white : Color.black
         let navHeight: CGFloat = 68
         let textColor = colorScheme == .light ? Color.gray : Color.gray.opacity(0.8)
         let textHoverColor = colorScheme == .light ? Color.black : Color.white
@@ -872,7 +1259,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             // Main content
             ZStack {
-                Color(colorScheme == .light ? .white : .black)
+                editorBackgroundColor
                     .ignoresSafeArea()
 
                 // Show video player if a video entry is selected
@@ -887,39 +1274,29 @@ struct ContentView: View {
                 } else {
                     // Show text editor for text entries
                     TextEditor(text: $text)
-                    .background(Color(colorScheme == .light ? .white : .black))
+                    .background(editorBackgroundColor)
                     .font(.custom(selectedFont, size: fontSize))
-                    .foregroundColor(colorScheme == .light ? Color(red: 0.20, green: 0.20, blue: 0.20) : Color(red: 0.9, green: 0.9, blue: 0.9))
+                    .foregroundColor(editorTextColor)
                     .scrollContentBackground(.hidden)
                     .scrollIndicators(.never)
                     .lineSpacing(lineHeight)
-                    .frame(maxWidth: 650)
+                    .frame(maxWidth: writingColumnWidth)
+                    .padding(.horizontal, editorHorizontalPadding)
                     .padding(.top, 40)
                     .id("\(selectedFont)-\(fontSize)-\(colorScheme)")
                     .padding(.bottom, bottomNavOpacity > 0 ? navHeight : 0)
                     .colorScheme(colorScheme)
                     .onAppear {
-                        placeholderText = placeholderOptions.randomElement() ?? "Begin writing"
-                        // Removed findSubview code which was causing errors
-
-                        // Add keyboard monitor for backspace/delete keys
-                        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                            // Check if backspace is disabled and the key is delete/backspace
-                            if backspaceDisabled && (event.keyCode == 51 || event.keyCode == 117) {
-                                // Block the backspace/delete key
-                                return nil
-                            }
-                            return event
-                        }
+                        refreshPlaceholder()
                     }
                     .overlay(
                         ZStack(alignment: .topLeading) {
                             if text.isEmpty {
                                 Text(placeholderText)
                                     .font(.custom(selectedFont, size: fontSize))
-                                    .foregroundColor(colorScheme == .light ? .gray.opacity(0.5) : .gray.opacity(0.6))
+                                    .foregroundColor(editorTextColor.opacity(0.38))
                                     .allowsHitTesting(false)
-                                    .offset(x: 5, y: 40)
+                                    .offset(x: editorHorizontalPadding + 5, y: 40)
                             }
                         }, alignment: .topLeading
                     )
@@ -928,8 +1305,9 @@ struct ContentView: View {
                 
                 VStack {
                     Spacer()
-                    HStack {
-                        if isViewingVideoEntry {
+                    FreewriteGlassContainer(spacing: 12) {
+                        HStack {
+                            if isViewingVideoEntry {
                             HStack(spacing: 8) {
                                 if selectedVideoHasTranscript {
                                     Button(action: {
@@ -952,7 +1330,7 @@ struct ContentView: View {
                                 }
                             }
                             .padding(8)
-                            .cornerRadius(6)
+                            .freewriteGlassPanel(cornerRadius: 12, interactive: true)
                             .onHover { hovering in
                                 isHoveringBottomNav = hovering
                             }
@@ -980,92 +1358,13 @@ struct ContentView: View {
                                 Text("•")
                                     .foregroundColor(.gray)
                                 
-                                Button("Lato") {
-                                    selectedFont = "Lato-Regular"
-                                    currentRandomFont = ""
+                                Button("Toggle Font") {
+                                    toggleWritingFont()
                                 }
                                 .buttonStyle(.plain)
-                                .foregroundColor(hoveredFont == "Lato" ? textHoverColor : textColor)
+                                .foregroundColor(hoveredFont == "Toggle Font" ? textHoverColor : textColor)
                                 .onHover { hovering in
-                                    hoveredFont = hovering ? "Lato" : nil
-                                    isHoveringBottomNav = hovering
-                                    if hovering {
-                                        NSCursor.pointingHand.push()
-                                    } else {
-                                        NSCursor.pop()
-                                    }
-                                }
-                                
-                                Text("•")
-                                    .foregroundColor(.gray)
-                                
-                                Button("Arial") {
-                                    selectedFont = "Arial"
-                                    currentRandomFont = ""
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundColor(hoveredFont == "Arial" ? textHoverColor : textColor)
-                                .onHover { hovering in
-                                    hoveredFont = hovering ? "Arial" : nil
-                                    isHoveringBottomNav = hovering
-                                    if hovering {
-                                        NSCursor.pointingHand.push()
-                                    } else {
-                                        NSCursor.pop()
-                                    }
-                                }
-                                
-                                Text("•")
-                                    .foregroundColor(.gray)
-                                
-                                Button("System") {
-                                    selectedFont = ".AppleSystemUIFont"
-                                    currentRandomFont = ""
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundColor(hoveredFont == "System" ? textHoverColor : textColor)
-                                .onHover { hovering in
-                                    hoveredFont = hovering ? "System" : nil
-                                    isHoveringBottomNav = hovering
-                                    if hovering {
-                                        NSCursor.pointingHand.push()
-                                    } else {
-                                        NSCursor.pop()
-                                    }
-                                }
-                                
-                                Text("•")
-                                    .foregroundColor(.gray)
-                                
-                                Button("Serif") {
-                                    selectedFont = "Times New Roman"
-                                    currentRandomFont = ""
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundColor(hoveredFont == "Serif" ? textHoverColor : textColor)
-                                .onHover { hovering in
-                                    hoveredFont = hovering ? "Serif" : nil
-                                    isHoveringBottomNav = hovering
-                                    if hovering {
-                                        NSCursor.pointingHand.push()
-                                    } else {
-                                        NSCursor.pop()
-                                    }
-                                }
-                                
-                                Text("•")
-                                    .foregroundColor(.gray)
-                                
-                                Button(randomButtonTitle) {
-                                    if let randomFont = availableFonts.randomElement() {
-                                        selectedFont = randomFont
-                                        currentRandomFont = randomFont
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundColor(hoveredFont == "Random" ? textHoverColor : textColor)
-                                .onHover { hovering in
-                                    hoveredFont = hovering ? "Random" : nil
+                                    hoveredFont = hovering ? "Toggle Font" : nil
                                     isHoveringBottomNav = hovering
                                     if hovering {
                                         NSCursor.pointingHand.push()
@@ -1075,7 +1374,7 @@ struct ContentView: View {
                                 }
                             }
                             .padding(8)
-                            .cornerRadius(6)
+                            .freewriteGlassPanel(cornerRadius: 12, interactive: true)
                             .onHover { hovering in
                                 isHoveringBottomNav = hovering
                             }
@@ -1210,21 +1509,20 @@ struct ContentView: View {
                                     }
                                 }
                                 .frame(minWidth: 300, idealWidth: 320, maxWidth: 360)
-                                .background(colorScheme == .light ? Color.white : Color.black)
+                                .freewriteGlassPanel(cornerRadius: 12, interactive: true)
                             }
 
                             Text("•")
                                 .foregroundColor(.gray)
 
-                            Button("Chat") {
-                                showingChatMenu = true
-                                // Ensure didCopyPrompt is reset when opening the menu
-                                didCopyPrompt = false
+                            Button("Explore") {
+                                showingFounderTools = true
+                                didCopyFounderTool = false
                             }
                             .buttonStyle(.plain)
-                            .foregroundColor(isHoveringChat ? textHoverColor : textColor)
+                            .foregroundColor(isHoveringExplore ? textHoverColor : textColor)
                             .onHover { hovering in
-                                isHoveringChat = hovering
+                                isHoveringExplore = hovering
                                 isHoveringBottomNav = hovering
                                 if hovering {
                                     NSCursor.pointingHand.push()
@@ -1232,169 +1530,159 @@ struct ContentView: View {
                                     NSCursor.pop()
                                 }
                             }
-                            .popover(isPresented: $showingChatMenu, attachmentAnchor: .point(UnitPoint(x: 0.5, y: 0)), arrowEdge: .top) {
-                                VStack(spacing: 0) { // Wrap everything in a VStack for consistent styling and onChange
-                                    let isVideoEntry = currentVideoURL != nil
-                                    let chatSourceText = currentChatSourceText()
-                                    
-                                    // Calculate potential URL lengths
-                                    let gptFullText = aiChatPrompt + "\n\n" + chatSourceText
-                                    let claudeFullText = claudePrompt + "\n\n" + chatSourceText
-                                    let encodedGptText = gptFullText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                                    let encodedClaudeText = claudeFullText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                                    
-                                    let gptUrlLength = "https://chat.openai.com/?m=".count + encodedGptText.count
-                                    let claudeUrlLength = "https://claude.ai/new?q=".count + encodedClaudeText.count
-                                    let isUrlTooLong = gptUrlLength > 6000 || claudeUrlLength > 6000
-                                    
-                                    if isUrlTooLong {
-                                        // View for long text (URL too long)
-                                        Text("Hey, your entry is quite long. You'll need to manually copy the prompt by clicking 'Copy Prompt' below and then paste it into AI of your choice (ex. ChatGPT). The prompt includes your entry as well. So just copy paste and go! See what the AI says.")
-                                            .font(.system(size: 14))
+                            .popover(isPresented: $showingFounderTools, attachmentAnchor: .point(UnitPoint(x: 0.5, y: 0)), arrowEdge: .top) {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    let sourceText = currentChatSourceText()
+                                    let charCount = sourceText.trimmingCharacters(in: .whitespacesAndNewlines).count
+
+                                    // Header
+                                    HStack(alignment: .center, spacing: 8) {
+                                        Text("Explore")
+                                            .font(.system(size: 13, weight: .semibold))
                                             .foregroundColor(popoverTextColor)
-                                            .lineLimit(nil)
-                                            .multilineTextAlignment(.leading)
-                                            .frame(width: 200, alignment: .leading)
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
-                                        
-                                        Divider()
-                                        
-                                        Button(action: {
-                                            copyPromptToClipboard()
-                                            didCopyPrompt = true
-                                        }) {
-                                            Text(didCopyPrompt ? "Copied!" : "Copy Prompt")
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 8)
+                                        Spacer()
+                                        Text(charCount > 0 ? "\(charCount) chars" : "no text")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                        Button(action: { showingFounderTools = false }) {
+                                            Image(systemName: "xmark")
+                                                .font(.system(size: 10, weight: .semibold))
+                                                .frame(width: 20, height: 20)
+                                                .foregroundColor(popoverTextColor.opacity(0.55))
+                                                .background(Circle().fill(Color.white.opacity(0.07)))
                                         }
                                         .buttonStyle(.plain)
-                                        .foregroundColor(popoverTextColor)
-                                        .onHover { hovering in
-                                            if hovering {
-                                                NSCursor.pointingHand.push()
-                                            } else {
-                                                NSCursor.pop()
+                                        .onHover { h in h ? NSCursor.pointingHand.push() : NSCursor.pop() }
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.top, 13)
+                                    .padding(.bottom, 12)
+
+                                    // 3×2 artifact grid — scan, click, done
+                                    LazyVGrid(
+                                        columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
+                                        spacing: 8
+                                    ) {
+                                        ForEach(FounderTool.allCases) { tool in
+                                            let isSelected = selectedFounderTool == tool
+                                            Button(action: { selectedFounderTool = tool }) {
+                                                VStack(spacing: 5) {
+                                                    Image(systemName: tool.icon)
+                                                        .font(.system(size: 15, weight: .medium))
+                                                        .foregroundColor(isSelected ? .accentColor : popoverTextColor.opacity(0.68))
+                                                    Text(tool.rawValue)
+                                                        .font(.system(size: 10, weight: isSelected ? .semibold : .regular))
+                                                        .foregroundColor(isSelected ? popoverTextColor : popoverTextColor.opacity(0.62))
+                                                        .multilineTextAlignment(.center)
+                                                        .lineLimit(2)
+                                                        .fixedSize(horizontal: false, vertical: true)
+                                                }
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 10)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 10)
+                                                        .fill(isSelected
+                                                            ? (colorScheme == .light ? Color.black.opacity(0.055) : Color.white.opacity(0.11))
+                                                            : Color.clear)
+                                                )
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 10)
+                                                        .stroke(
+                                                            isSelected
+                                                                ? Color.white.opacity(colorScheme == .light ? 0.18 : 0.14)
+                                                                : Color.clear,
+                                                            lineWidth: 0.6
+                                                        )
+                                                )
                                             }
+                                            .buttonStyle(.plain)
+                                            .onHover { h in h ? NSCursor.pointingHand.push() : NSCursor.pop() }
                                         }
-                                        
-                                    } else if !isVideoEntry && text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("hi. my name is farza.") {
-                                        Text("Yo. Sorry, you can't chat with the guide lol. Please write your own entry.")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(popoverTextColor)
-                                            .frame(width: 250)
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
-                                    } else if !isVideoEntry && text.count < 350 {
-                                        Text("Please free write for at minimum 5 minutes first. Then click this. Trust.")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(popoverTextColor)
-                                            .frame(width: 250)
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
-                                    } else {
-                                        // View for normal text length
-                                        Button(action: {
-                                            showingChatMenu = false
-                                            openChatGPT()
-                                        }) {
+                                    }
+                                    .padding(.horizontal, 14)
+                                    .padding(.bottom, 12)
+
+                                    Rectangle()
+                                        .fill(Color.white.opacity(colorScheme == .light ? 0.10 : 0.08))
+                                        .frame(height: 0.6)
+
+                                    // Provider row — equal-width, one click redirects with pre-built prompt
+                                    HStack(spacing: 0) {
+                                        Button(action: { openFounderToolPromptInChatGPT() }) {
                                             Text("ChatGPT")
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 8)
+                                                .font(.system(size: 12, weight: .medium))
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 13)
+                                                .contentShape(Rectangle())
                                         }
                                         .buttonStyle(.plain)
                                         .foregroundColor(popoverTextColor)
-                                        .onHover { hovering in
-                                            if hovering {
-                                                NSCursor.pointingHand.push()
-                                            } else {
-                                                NSCursor.pop()
-                                            }
-                                        }
-                                        
-                                        Divider()
-                                        
-                                        Button(action: {
-                                            showingChatMenu = false
-                                            openClaude()
-                                        }) {
+                                        .onHover { h in h ? NSCursor.pointingHand.push() : NSCursor.pop() }
+
+                                        Rectangle()
+                                            .fill(Color.white.opacity(colorScheme == .light ? 0.10 : 0.07))
+                                            .frame(width: 0.6)
+
+                                        Button(action: { openFounderToolPromptInClaude() }) {
                                             Text("Claude")
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 8)
+                                                .font(.system(size: 12, weight: .medium))
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 13)
+                                                .contentShape(Rectangle())
                                         }
                                         .buttonStyle(.plain)
                                         .foregroundColor(popoverTextColor)
-                                        .onHover { hovering in
-                                            if hovering {
-                                                NSCursor.pointingHand.push()
-                                            } else {
-                                                NSCursor.pop()
+                                        .onHover { h in h ? NSCursor.pointingHand.push() : NSCursor.pop() }
+
+                                        Rectangle()
+                                            .fill(Color.white.opacity(colorScheme == .light ? 0.10 : 0.07))
+                                            .frame(width: 0.6)
+
+                                        Button(action: { openFounderToolPromptInGemini() }) {
+                                            VStack(spacing: 2) {
+                                                Text("Gemini")
+                                                    .font(.system(size: 12, weight: .medium))
+                                                Text("paste")
+                                                    .font(.system(size: 9))
+                                                    .foregroundColor(.secondary)
                                             }
-                                        }
-                                        
-                                        Divider()
-                                        
-                                        Button(action: {
-                                            // Don't dismiss menu, just copy and update state
-                                            copyPromptToClipboard()
-                                            didCopyPrompt = true
-                                        }) {
-                                            Text(didCopyPrompt ? "Copied!" : "Copy Prompt")
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 8)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 9)
+                                            .contentShape(Rectangle())
                                         }
                                         .buttonStyle(.plain)
                                         .foregroundColor(popoverTextColor)
-                                        .onHover { hovering in
-                                            if hovering {
-                                                NSCursor.pointingHand.push()
-                                            } else {
-                                                NSCursor.pop()
-                                            }
-                                        }
+                                        .onHover { h in h ? NSCursor.pointingHand.push() : NSCursor.pop() }
                                     }
+
+                                    Rectangle()
+                                        .fill(Color.white.opacity(colorScheme == .light ? 0.10 : 0.08))
+                                        .frame(height: 0.6)
+
+                                    // Copy fallback for entries that exceed URL limits
+                                    Button(action: { copyFounderToolPrompt() }) {
+                                        Text(didCopyFounderTool ? "Prompt copied" : "Copy prompt")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(didCopyFounderTool ? .secondary : popoverTextColor.opacity(0.50))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 9)
+                                    .onHover { h in h ? NSCursor.pointingHand.push() : NSCursor.pop() }
                                 }
-                                .frame(minWidth: 120, maxWidth: 250) // Allow width to adjust
-                                .background(popoverBackgroundColor)
-                                .cornerRadius(8)
-                                .shadow(color: Color.black.opacity(0.1), radius: 4, y: 2)
-                                // Reset copied state when popover dismisses
-                                .onChange(of: showingChatMenu) { newValue in
-                                    if !newValue {
-                                        didCopyPrompt = false
-                                    }
+                                .frame(width: 360)
+                                .freewriteGlassPanel(cornerRadius: 16)
+                                .shadow(color: Color.black.opacity(0.12), radius: 6, y: 3)
+                                .onChange(of: selectedFounderTool) { _, _ in
+                                    didCopyFounderTool = false
+                                }
+                                .onChange(of: showingFounderTools) { _, newValue in
+                                    if !newValue { didCopyFounderTool = false }
                                 }
                             }
-                            
+
                             Text("•")
                                 .foregroundColor(.gray)
-
-                            if !isViewingVideoEntry {
-                                // Backspace toggle button
-                                Button(action: {
-                                    backspaceDisabled.toggle()
-                                }) {
-                                    Text(backspaceDisabled ? "Backspace is Off" : "Backspace is On")
-                                        .foregroundColor(isHoveringBackspaceToggle ? textHoverColor : textColor)
-                                }
-                                .buttonStyle(.plain)
-                                .onHover { hovering in
-                                    isHoveringBackspaceToggle = hovering
-                                    isHoveringBottomNav = hovering
-                                    if hovering {
-                                        NSCursor.pointingHand.push()
-                                    } else {
-                                        NSCursor.pop()
-                                    }
-                                }
-
-                                Text("•")
-                                    .foregroundColor(.gray)
-                            }
 
                             Button(isFullscreen ? "Minimize" : "Fullscreen") {
                                 if let window = NSApplication.shared.windows.first {
@@ -1481,13 +1769,14 @@ struct ContentView: View {
                             }
                         }
                         .padding(8)
-                        .cornerRadius(6)
+                        .freewriteGlassPanel(cornerRadius: 12, interactive: true)
                         .onHover { hovering in
                             isHoveringBottomNav = hovering
                         }
                     }
+                    }
                     .padding()
-                    .background(Color(colorScheme == .light ? .white : .black))
+                    .freewriteGlassPanel(cornerRadius: 24)
                     .opacity(bottomNavOpacity)
                     .onHover { hovering in
                         isHoveringBottomNav = hovering
@@ -1508,183 +1797,186 @@ struct ContentView: View {
             if showingSidebar {
                 Divider()
                 
-                VStack(spacing: 0) {
-                    // Header
-                    Button(action: {
-                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: getDocumentsDirectory().path)
-                    }) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 4) {
-                                    Text("History")
-                                        .font(.system(size: 13))
-                                        .foregroundColor(isHoveringHistory ? textHoverColor : textColor)
-                                    Image(systemName: "arrow.up.right")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(isHoveringHistory ? textHoverColor : textColor)
-                                }
-                                Text(getDocumentsDirectory().path)
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
+                ZStack {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .freewriteGlassBand()
+
+                    VStack(spacing: 0) {
+                        // Header
+                        HStack(alignment: .center, spacing: 8) {
+                            Text("History")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(colorScheme == .light ? Color.black.opacity(0.82) : Color.white.opacity(0.90))
+
+                            Text("\(entries.count)")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+
                             Spacer()
+
+                            Button(action: {
+                                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: getDocumentsDirectory().path)
+                            }) {
+                                Image(systemName: "folder")
+                                    .font(.system(size: 12))
+                                    .frame(width: 24, height: 24)
+                                    .foregroundColor(isHoveringHistory ? textHoverColor : textColor.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Open folder")
+                            .onHover { hovering in
+                                isHoveringHistory = hovering
+                                hovering ? NSCursor.pointingHand.push() : NSCursor.pop()
+                            }
+
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showingSidebar = false
+                                }
+                            }) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .frame(width: 20, height: 20)
+                                    .foregroundColor(textColor.opacity(0.55))
+                                    .background(Circle().fill(Color.white.opacity(0.07)))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Close")
+                            .onHover { hovering in
+                                hovering ? NSCursor.pointingHand.push() : NSCursor.pop()
+                            }
                         }
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .onHover { hovering in
-                        isHoveringHistory = hovering
-                    }
-                    
-                    Divider()
-                    
-                    // Entries List
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(entries) { entry in
-                                Button(action: {
-                                    if selectedEntryId != entry.id {
-                                        historyDebug("ROW TAP \(debugEntrySummary(entry))")
-                                        // Save current entry before switching
-                                        if let currentId = selectedEntryId,
-                                           let currentEntry = entries.first(where: { $0.id == currentId }),
-                                           currentEntry.entryType == .text {
-                                            saveEntry(entry: currentEntry)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 13)
+                        .padding(.bottom, 11)
+
+                        Rectangle()
+                            .fill(Color.white.opacity(colorScheme == .light ? 0.10 : 0.08))
+                            .frame(height: 0.6)
+                        
+                        // Entries List
+                        ScrollView {
+                            LazyVStack(spacing: 6) {
+                                ForEach(entries) { entry in
+                                    let rowTitle = entry.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled entry" : entry.previewText
+                                    let isSelected = selectedEntryId == entry.id
+
+                                    ZStack(alignment: .leading) {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(sidebarRowFill(for: entry))
+
+                                        if isSelected {
+                                            Capsule()
+                                                .fill(Color.accentColor.opacity(0.8))
+                                                .frame(width: 3)
+                                                .padding(.vertical, 8)
+                                                .padding(.leading, 4)
                                         }
 
-                                        // Re-resolve from source of truth after any state mutations.
-                                        guard let targetEntry = entries.first(where: { $0.id == entry.id }) else {
-                                            historyDebug("ROW TAP target missing id=\(entry.id.uuidString)")
-                                            return
-                                        }
-                                        selectedEntryId = targetEntry.id
-                                        historyDebug("ROW TAP resolved target \(debugEntrySummary(targetEntry))")
-                                        loadEntry(entry: targetEntry)
-                                    }
-                                }) {
-                                    HStack(alignment: .top) {
-                                        // Show video thumbnail for video entries
-                                        if let videoFilename = resolvedVideoFilename(for: entry) {
-                                            if let thumbnail = loadThumbnailImage(for: videoFilename) {
+                                        HStack(alignment: .center, spacing: 10) {
+                                            // Thumbnail only for video entries with real thumbnails
+                                            if entry.entryType == .video,
+                                               let videoFilename = resolvedVideoFilename(for: entry),
+                                               let thumbnail = loadThumbnailImage(for: videoFilename) {
                                                 Image(nsImage: thumbnail)
                                                     .resizable()
                                                     .aspectRatio(contentMode: .fill)
-                                                    .frame(width: 40, height: 40)
-                                                    .cornerRadius(4)
+                                                    .frame(width: 34, height: 34)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 6))
                                                     .overlay(
                                                         Image(systemName: "play.circle.fill")
-                                                            .foregroundColor(.white)
-                                                            .font(.system(size: 16))
+                                                            .foregroundColor(.white.opacity(0.9))
+                                                            .font(.system(size: 13))
                                                     )
-                                            } else {
-                                                // Fallback if thumbnail generation fails
-                                                ZStack {
-                                                    Rectangle()
-                                                        .fill(Color.gray.opacity(0.3))
-                                                        .frame(width: 40, height: 40)
-                                                        .cornerRadius(4)
-                                                    Image(systemName: "video.fill")
-                                                        .foregroundColor(.gray)
-                                                        .font(.system(size: 16))
-                                                }
                                             }
-                                        }
 
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            HStack {
-                                                Text(entry.previewText)
-                                                    .font(.system(size: 13))
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(rowTitle)
+                                                    .font(.system(size: 12, weight: isSelected ? .medium : .regular))
                                                     .lineLimit(1)
-                                                    .foregroundColor(.primary)
+                                                    .foregroundColor(colorScheme == .light ? Color.black.opacity(0.82) : Color.white.opacity(0.88))
 
-                                                Spacer()
-                                                
-                                                // Export/Trash icons that appear on hover
-                                                if hoveredEntryId == entry.id {
-                                                    HStack(spacing: 8) {
-                                                        // Export PDF button
-                                                        Button(action: {
-                                                            exportEntryAsPDF(entry: entry)
-                                                        }) {
-                                                            Image(systemName: "arrow.down.circle")
-                                                                .font(.system(size: 11))
-                                                                .foregroundColor(hoveredExportId == entry.id ? 
-                                                                    (colorScheme == .light ? .black : .white) : 
-                                                                    (colorScheme == .light ? .gray : .gray.opacity(0.8)))
-                                                        }
-                                                        .buttonStyle(.plain)
-                                                        .help("Export entry as PDF")
-                                                        .onHover { hovering in
-                                                            withAnimation(.easeInOut(duration: 0.2)) {
-                                                                hoveredExportId = hovering ? entry.id : nil
-                                                            }
-                                                            if hovering {
-                                                                NSCursor.pointingHand.push()
-                                                            } else {
-                                                                NSCursor.pop()
-                                                            }
-                                                        }
-                                                        
-                                                        // Trash icon
-                                                        Button(action: {
-                                                            deleteEntry(entry: entry)
-                                                        }) {
-                                                            Image(systemName: "trash")
-                                                                .font(.system(size: 11))
-                                                                .foregroundColor(hoveredTrashId == entry.id ? .red : .gray)
-                                                        }
-                                                        .buttonStyle(.plain)
-                                                        .onHover { hovering in
-                                                            withAnimation(.easeInOut(duration: 0.2)) {
-                                                                hoveredTrashId = hovering ? entry.id : nil
-                                                            }
-                                                            if hovering {
-                                                                NSCursor.pointingHand.push()
-                                                            } else {
-                                                                NSCursor.pop()
-                                                            }
-                                                        }
+                                                HStack(spacing: 5) {
+                                                    Text(entry.date)
+                                                        .font(.system(size: 10))
+                                                        .foregroundColor(.secondary)
+
+                                                    if entry.entryType == .video {
+                                                        Text("video")
+                                                            .font(.system(size: 9, weight: .medium))
+                                                            .foregroundColor(.secondary.opacity(0.8))
+                                                            .padding(.horizontal, 4)
+                                                            .padding(.vertical, 1)
+                                                            .background(
+                                                                Capsule()
+                                                                    .fill(colorScheme == .light ? Color.black.opacity(0.05) : Color.white.opacity(0.06))
+                                                            )
                                                     }
                                                 }
                                             }
-                                            
-                                            Text(entry.date)
-                                                .font(.system(size: 12))
-                                                .foregroundColor(.secondary)
+
+                                            Spacer(minLength: 0)
+
+                                            if hoveredEntryId == entry.id {
+                                                HStack(spacing: 6) {
+                                                    Button(action: { exportEntryAsPDF(entry: entry) }) {
+                                                        Image(systemName: "arrow.down.circle")
+                                                            .font(.system(size: 11))
+                                                            .foregroundColor(hoveredExportId == entry.id ? textHoverColor : textColor.opacity(0.6))
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .help("Export as PDF")
+                                                    .onHover { hovering in
+                                                        withAnimation(.easeInOut(duration: 0.15)) {
+                                                            hoveredExportId = hovering ? entry.id : nil
+                                                        }
+                                                        hovering ? NSCursor.pointingHand.push() : NSCursor.pop()
+                                                    }
+
+                                                    Button(action: { deleteEntry(entry: entry) }) {
+                                                        Image(systemName: "trash")
+                                                            .font(.system(size: 11))
+                                                            .foregroundColor(hoveredTrashId == entry.id ? .red : textColor.opacity(0.6))
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .help("Delete entry")
+                                                    .onHover { hovering in
+                                                        withAnimation(.easeInOut(duration: 0.15)) {
+                                                            hoveredTrashId = hovering ? entry.id : nil
+                                                        }
+                                                        hovering ? NSCursor.pointingHand.push() : NSCursor.pop()
+                                                    }
+                                                }
+                                                .transition(.opacity)
+                                            }
+                                        }
+                                        .padding(.leading, isSelected ? 13 : 10)
+                                        .padding(.trailing, 10)
+                                        .padding(.vertical, 8)
+                                    }
+                                    .contentShape(RoundedRectangle(cornerRadius: 10))
+                                    .onTapGesture {
+                                        selectHistoryEntry(entry)
+                                    }
+                                    .onHover { hovering in
+                                        withAnimation(.easeInOut(duration: 0.15)) {
+                                            hoveredEntryId = hovering ? entry.id : nil
                                         }
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .fill(backgroundColor(for: entry))
-                                    )
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .contentShape(Rectangle())
-                                .onHover { hovering in
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        hoveredEntryId = hovering ? entry.id : nil
+                                    .onAppear {
+                                        NSCursor.pop()
                                     }
-                                }
-                                .onAppear {
-                                    NSCursor.pop()  // Reset cursor when button appears
-                                }
-                                .help("Click to select this entry")  // Add tooltip
-                                
-                                if entry.id != entries.last?.id {
-                                    Divider()
+                                    .help("Open this entry")
                                 }
                             }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 8)
                         }
+                        .scrollIndicators(.never)
                     }
-                    .scrollIndicators(.never)
                 }
-                .frame(width: 200)
-                .background(Color(colorScheme == .light ? .white : NSColor.black))
+                .frame(width: 280)
             }
         }
         .overlay {
@@ -1716,7 +2008,7 @@ struct ContentView: View {
                 clearVideoRecordingPreparationState()
             }
         }
-        .onChange(of: text) { _ in
+        .onChange(of: text) { _, _ in
             // Save current entry when text changes
             if let currentId = selectedEntryId,
                let currentEntry = entries.first(where: { $0.id == currentId }),
@@ -1861,14 +2153,14 @@ struct ContentView: View {
         } else {
             text = ""
             // Randomize placeholder text for new entry
-            placeholderText = placeholderOptions.randomElement() ?? "Begin writing"
+            refreshPlaceholder()
             // Save the empty entry
             saveEntry(entry: newEntry)
         }
     }
     
     private func openChatGPT() {
-        let fullText = aiChatPrompt + "\n\n" + currentChatSourceText()
+        let fullText = activeAIChatPrompt + "\n\n" + currentChatSourceText()
         
         if let encodedText = fullText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
            let url = URL(string: "https://chat.openai.com/?prompt=" + encodedText) {
@@ -1877,16 +2169,83 @@ struct ContentView: View {
     }
     
     private func openClaude() {
-        let fullText = claudePrompt + "\n\n" + currentChatSourceText()
-        
+        let fullText = activeClaudePrompt + "\n\n" + currentChatSourceText()
+
         if let encodedText = fullText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
            let url = URL(string: "https://claude.ai/new?q=" + encodedText) {
             NSWorkspace.shared.open(url)
         }
     }
 
+    private func openGemini() {
+        copyPromptToClipboard()
+        if let url = URL(string: "https://gemini.google.com/app") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func openFounderToolPromptInGemini() {
+        copyFounderToolPrompt()
+        if let url = URL(string: "https://gemini.google.com/app") {
+            showingFounderTools = false
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @ViewBuilder
+    private func exploreProviderButton(_ title: String, gemini: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 0) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+                if gemini {
+                    Text("paste")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 4)
+                }
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(popoverTextColor)
+        .onHover { h in h ? NSCursor.pointingHand.push() : NSCursor.pop() }
+    }
+
+    @ViewBuilder
+    private func chatProviderButton(_ title: String, gemini: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 0) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+                if gemini {
+                    Text("paste")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(.trailing, 4)
+                }
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(popoverTextColor)
+        .onHover { h in h ? NSCursor.pointingHand.push() : NSCursor.pop() }
+    }
+
     private func copyPromptToClipboard() {
-        let fullText = aiChatPrompt + "\n\n" + currentChatSourceText()
+        let fullText = activeAIChatPrompt + "\n\n" + currentChatSourceText()
 
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
