@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Freewrite - Technical Documentation for AI Agents
 
 > **⚠️ IMPORTANT FOR AI AGENTS**: This file (`AGENTS.md`) and `CLAUDE.md` are clones and must be kept in sync.
@@ -17,11 +21,10 @@ Freewrite is a **distraction-free writing environment** for macOS designed aroun
 ### User Experience Philosophy
 
 **Core Principles:**
-1. **No Backspace (Optional)**: Users can disable the backspace key to encourage forward-thinking writing without self-editing
-2. **Timed Sessions**: Built-in timer (default 15 minutes) creates focused writing sprints
-3. **Auto-Everything**: Auto-save, auto-new-entry, auto-timestamp - the app manages logistics so users can focus on writing
-4. **Local-First**: All data stays on the user's machine in plain markdown files they can access directly
-5. **Minimal UI**: Most UI elements hide during timed sessions, leaving only the text
+1. **Timed Sessions**: Built-in timer (default 15 minutes) creates focused writing sprints
+2. **Auto-Everything**: Auto-save, auto-new-entry, auto-timestamp - the app manages logistics so users can focus on writing
+3. **Local-First**: All data stays on the user's machine in plain markdown files they can access directly
+4. **Minimal UI**: Most UI elements hide during timed sessions, leaving only the text
 
 ### Use Cases
 
@@ -30,7 +33,14 @@ Freewrite is a **distraction-free writing environment** for macOS designed aroun
 - The app creates a new entry automatically at the start of each day
 - Writing is saved continuously with no manual save action
 - Timer creates urgency and prevents over-editing
-- Backspace disable forces forward momentum in thinking
+- Minimal controls and timed sessions encourage forward momentum without blocking standard editing keys
+
+**Founder Use Case - Startup Signal Freewriting:**
+- Founder-focused freewriting is now the default product posture; there is no separate writing mode toggle
+- Empty entries show founder prompts focused on customer signal, problems, shaky assumptions, wedges, and fast experiments
+- Entries remain blank markdown files; prompts are placeholders only and are never inserted into saved text
+- The Chat workflow uses founder-specific prompts that turn raw freewriting into a concise debrief: strongest customer/problem signal, risky assumption, ICP/wedge, 48-hour experiment, and memo/product-thesis sentence
+- The `Explore` workflow locally turns the current entry or video transcript into founder artifacts: Explore, Assumptions, Customer Story, Opportunity Map, PMF Signal, and Memo. The popover is a two-pane artifact studio: source status + tool cards on the left, markdown preview + actions on the right. Users can save a local draft, copy the draft, copy an AI prompt, or send the selected artifact prompt to ChatGPT/Claude.
 
 **Secondary Use Case - Video Journaling:**
 - Quick video capture for visual thoughts/ideas
@@ -68,11 +78,26 @@ Freewrite is a native macOS writing application built with SwiftUI that allows u
 freewrite/
 ├── freewrite.xcodeproj/          # Xcode project file
 ├── freewrite/
-│   ├── freewriteApp.swift        # App entry point
-│   ├── ContentView.swift         # Main view (1400+ lines)
+│   ├── freewriteApp.swift        # App entry point; injects AIProviderStore as @EnvironmentObject
+│   ├── GlassStyle.swift          # Shared Liquid Glass/fallback styling helpers
+│   ├── ContentView.swift         # Main view (~2450 lines)
 │   ├── VideoRecordingView.swift  # Video recording interface
 │   ├── VideoPlayerView.swift     # Video playback interface
+│   ├── ExploreModels.swift       # ExploreController + ExploreAIAvailability
+│   ├── LookBackView.swift        # Weekly digest (on-device @Generable or text-mode)
+│   ├── ThinkWithItView.swift     # "Think" panel: Ask (RAG Q&A) + Clarity (structured reasoning)
+│   ├── ProviderSettingsView.swift # AI provider + MCP settings UI
+│   ├── AIProvider.swift          # AIProvider protocol + AIProviderType enum + errors
+│   ├── AIProviderStore.swift     # ObservableObject; active provider, persisted config, MCP flag
+│   ├── AppleOnDeviceProvider.swift # FoundationModels-based on-device streaming provider
+│   ├── BYOKProvider.swift        # OpenAI-compatible SSE streaming (BYOK)
+│   ├── OllamaProvider.swift      # Ollama NDJSON streaming (localhost:11434)
+│   ├── KeychainManager.swift     # Security framework Keychain helpers for API keys
+│   ├── EntryIndexer.swift        # NLEmbedding semantic index + cosine similarity RAG
 │   └── freewrite.entitlements    # App permissions
+├── ThinkINMCPServer/             # Standalone Swift Package (Swift 6) — MCP server
+│   ├── Package.swift             # swift-tools-version: 6.0; depends on swift-sdk MCP
+│   └── Sources/ThinkINMCPServer/main.swift  # StdioTransport server; 5 tools
 ├── CLAUDE.md                     # This file
 └── AGENTS.md                     # Duplicate of this file
 ```
@@ -87,7 +112,7 @@ enum EntryType {
     case video
 }
 
-struct HumanEntry: Identifiable {
+struct HumanEntry: Identifiable, Equatable {
     let id: UUID
     let date: String              // Display format: "MMM d" (e.g., "Feb 20")
     let filename: String          // Format: [UUID]-[YYYY-MM-DD-HH-mm-ss].md
@@ -118,6 +143,63 @@ struct HumanEntry: Identifiable {
   - `transcript.md` (optional; speech transcript for that recording)
 - Example directory: `~/Documents/Freewrite/Videos/[6910BBDE-75FC-415C-ABB9-C76644B037B2]-[2026-02-20-08-01-04]/`
 
+## AI Architecture (Think IN)
+
+### Provider Abstraction
+
+All AI features route through `AIProvider` protocol:
+
+```swift
+protocol AIProvider {
+    var isAvailable: Bool { get }
+    var displayName: String { get }
+    var requiresKey: Bool { get }
+    func stream(prompt: String, instructions: String) -> AsyncThrowingStream<String, Error>
+}
+```
+
+Three concrete providers:
+- **`AppleOnDeviceProvider`**: `FoundationModels.LanguageModelSession.streamResponse`; delta = successive snapshot diffs; `isAvailable` checks `SystemLanguageModel.default.availability`
+- **`BYOKProvider`**: OpenAI-compatible SSE; URLSession bytes stream; parses `data: {...}` lines; key in Keychain account `"byok"`
+- **`OllamaProvider`**: NDJSON streaming at `localhost:11434`; each line is JSON; reads `message.content`; stops on `done: true`
+
+`AIProviderStore` (`ObservableObject`) holds the active provider type and config, persists to UserDefaults, stores API keys in Keychain via `KeychainManager`, and writes `mcp-config.json` to `~/Library/Application Support/ThinkIN/` for the MCP server to read the write-enable toggle.
+
+Injection: `freewriteApp` creates `@StateObject private var providerStore = AIProviderStore()` and injects it with `.environmentObject(providerStore)` on `ContentView`. All child views that need AI (`ExploreController`, `LookBackView`, `ThinkWithItView`, `ProviderSettingsView`) read it with `@EnvironmentObject private var providerStore: AIProviderStore`.
+
+**Important**: The `ExploreController.run(prompt:provider:)` takes `any AIProvider` — always pass `providerStore.activeProvider`. The old `ExploreController.availability()` static method remains only for on-device status queries (used by `ProviderSettingsView`).
+
+### Semantic Indexer
+
+`EntryIndexer` (`ObservableObject`) builds a `NLEmbedding.sentenceEmbedding(for: .english)` index:
+- Triggered by `.onChange(of: entries)` in `ContentView` → `updateIndex(entries:directory:)`
+- Stores `[Float]` vectors per entry; cosine similarity search; keyword fallback
+- Persisted to `~/Library/Application Support/ThinkIN/index.json`
+
+### Think Panel
+
+`ThinkWithItView` in a popover (nav button "Think"):
+- **Ask mode**: semantic RAG query → top-K relevant entry snippets → active provider stream
+- **Clarity mode**: on-device uses `@Generable ClarityOutput` (5 structured fields); BYOK/Ollama uses a text-mode structured prompt
+
+`ContentView` owns `@StateObject private var entryIndexer = EntryIndexer()` and passes it to `ThinkWithItView`.
+
+### MCP Server (External Agents)
+
+`ThinkINMCPServer/` is a standalone Swift 6 Package (separate from the Xcode project):
+
+```bash
+# Build once
+cd ThinkINMCPServer && swift build -c release
+
+# Claude Desktop config example:
+# "thinkin": { "command": ".build/release/ThinkINMCPServer" }
+```
+
+Five tools: `list_entries`, `search_entries`, `read_entry`, `append_to_entry`, `create_entry`.
+
+Write tools (`append_to_entry`, `create_entry`) are **gated** — they return an error unless the user has enabled write access in Freewrite → Settings (cpu icon). The app writes `{"writeEnabled": true/false}` to `~/Library/Application Support/ThinkIN/mcp-config.json`; the MCP server reads this file at call time. All paths are scoped to `~/Documents/Freewrite/`.
+
 ## Key Components
 
 ### ContentView.swift
@@ -135,10 +217,11 @@ The main view containing all UI and business logic.
 @State private var showingSidebar = false               // History sidebar visibility
 @State private var colorScheme: ColorScheme = .light    // Light/dark theme
 @State private var fontSize: CGFloat = 18               // Text size (16-26px)
-@State private var selectedFont: String = "Lato-Regular"// Current font
+@State private var selectedFont: String = ...           // Resolved premium writing font preset
+@State private var showingFounderTools = false          // Founder Explore popover visibility
+@State private var selectedFounderTool = .explore       // Active founder artifact tab
 @State private var timerIsRunning = false               // Timer state
 @State private var timeRemaining: Int = 900             // Timer (seconds)
-@State private var backspaceDisabled = false            // Backspace lock
 ```
 
 #### Core Functions
@@ -191,6 +274,16 @@ struct VideoPlayerView: View {
 }
 ```
 
+### GlassStyle.swift
+
+Centralizes the app's Apple Liquid Glass design-system helpers.
+
+- `freewriteGlassPanel(cornerRadius:interactive:)` applies Liquid Glass on macOS 26+ and falls back to `ultraThinMaterial` on older macOS versions
+- `freewriteGlassBand(interactive:)` applies full-height/sidebar glass bands with the same fallback behavior
+- `FreewriteGlassContainer(spacing:)` groups nearby glass elements so related controls resolve as one Liquid Glass system
+- Interactive controls such as bottom-nav clusters and recorder controls should pass `interactive: true`; passive panels such as popovers and sidebars should usually remain non-interactive
+- Avoid adding opaque nested backgrounds inside glass surfaces; use very low-opacity fills for selected/hover states so the glass material remains visible
+
 ## UI Layout
 
 ### Main Interface
@@ -203,41 +296,47 @@ struct VideoPlayerView: View {
 │                                                         │
 ├─────────────────────────────────────────────────────────┤
 │  Bottom Nav Bar:                                        │
-│  [16px] • [Lato] • [Arial] • [System] • [Serif] • ...  │
-│  ... [15:00] • [🎥] • [Chat] • [Backspace] • [...]     │
+│  [16px] • [Toggle Font]                                │
+│  ... [15:00] • [🎥] • [Chat] • [Explore] • [...]       │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ### Sidebar (History)
 
 ```
-┌──────────────┐
-│   History    │
-├──────────────┤
-│ 📹 Video...  │ ← Video entry with thumbnail
-│ Feb 20       │
-├──────────────┤
-│ This is a... │ ← Text entry with preview
-│ Feb 19       │
-├──────────────┤
-│ Another ...  │
-│ Feb 18       │
-└──────────────┘
+┌────────────────────────────┐
+│ History              📁  × │
+│ 12 entries • Local markdown│
+├────────────────────────────┤
+│ ▌ [thumb] Entry preview    │ ← click row to open
+│          Jun 8   Video     │ ← type/date metadata
+│   [doc]  Text preview      │ ← hover row for export/delete actions
+│          Jun 5   Text      │
+└────────────────────────────┘
 ```
 
 ## Navigation Bar Items
 
 ### Left Side (Font Controls)
 - **Font Size**: Cycles through [16, 18, 20, 22, 24, 26]px
-- **Font Selection**: Lato, Arial, System, Serif, Random
+- **Toggle Font**: Cycles through curated writing presets (New York, Iowan, Avenir, Lato, Mono) without showing every font name as separate UI
 - Hover changes cursor to pointing hand
 - **Video Mode Left Slot**: Replaced by `Copy Transcript` when viewing a video entry
+
+### Liquid Glass Treatment
+- Custom grouped surfaces use a local `freewriteGlassPanel(cornerRadius:interactive:)` wrapper
+- On macOS 26+, the wrapper applies SwiftUI Liquid Glass via `glassEffect(_:in:)`
+- On older macOS versions, the same wrapper falls back to `.ultraThinMaterial`
+- Apply glass to grouped surfaces, not every label: bottom nav groups, popovers, Explore tool shell, sidebar band, and recorder controls
+- The Explore popover uses one outer `freewriteGlassPanel`; internal source, tool-card, preview, and action regions use translucent fills so nested dark glass panels do not bury the effect. Keep local `Save Entry` as the primary action; `Copy Draft`, `Copy Prompt`, ChatGPT, and Claude are secondary actions.
+- The history sidebar uses one background `freewriteGlassBand()` so it can sit flush against the window edge without clipped rounded corners; selected/hovered rows use translucent fills instead of opaque blocks. Rows are tappable containers rather than nested buttons, while export/delete remain separate hover actions.
+- Avoid applying separate glass effects to every history row or every small text/button because Apple warns that too many Liquid Glass effects can hurt rendering performance
 
 ### Right Side (Utilities)
 - **Timer**: Shows time remaining, click to start/stop, double-click to reset
 - **Video Camera (🎥)**: Opens immersive video recording overlay
 - **Chat**: Opens AI chat menu (ChatGPT/Claude integration)
-- **Backspace Toggle**: Enable/disable backspace key
+- **Explore**: Opens local founder tools popover with source status, selectable artifact cards, a markdown preview, secondary `Copy Draft` / `Copy Prompt` / ChatGPT / Claude actions, and primary `Save Entry`. Outputs are generated from the current text entry or selected video transcript; if no source exists, the same tools produce blank templates.
 - **Fullscreen**: Toggle fullscreen mode
 - **New Entry**: Creates new text entry
 - **Theme Toggle**: 🌙/☀️ for dark/light mode
@@ -512,26 +611,6 @@ NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
     return event
 }
 ```
-
-### Backspace Disable Mechanism
-
-**Implementation**:
-```swift
-@State private var backspaceDisabled = false
-
-NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-    if backspaceDisabled && (event.keyCode == 51 || event.keyCode == 117) {
-        return nil  // Swallow the event
-    }
-    return event
-}
-```
-
-**macOS Key Codes**:
-- 51: Delete/Backspace key
-- 117: Forward delete (fn+delete)
-
-**Why this matters**: Forces users to write without editing, embracing imperfection and maintaining flow state.
 
 ### Video Recording Architecture
 
@@ -877,6 +956,23 @@ xcodebuild -project freewrite.xcodeproj -scheme freewrite -configuration Debug b
 xcodebuild -project freewrite.xcodeproj -scheme freewrite -configuration Debug clean build
 ```
 
+(The README's intended workflow is simpler: open `freewrite.xcodeproj` in Xcode and click Build/Run.)
+
+## Running Tests
+
+Tests use Apple's **Swift Testing** framework (`import Testing`, `@Test`, `#expect(...)`) — not XCTest. Targets: `freewriteTests` (unit) and `freewriteUITests` (UI). Both are largely placeholder stubs today.
+
+**Run all tests**:
+```bash
+xcodebuild test -project freewrite.xcodeproj -scheme freewrite -destination 'platform=macOS'
+```
+
+**Run a single test** (target/suite/function):
+```bash
+xcodebuild test -project freewrite.xcodeproj -scheme freewrite -destination 'platform=macOS' \
+  -only-testing:freewriteTests/freewriteTests/example
+```
+
 ## Testing Video Feature
 
 1. Build and run app
@@ -909,7 +1005,7 @@ Stored in `UserDefaults`:
 - `colorScheme`: "light" or "dark"
 
 Other settings are session-only (not persisted):
-- Font size, font family, timer duration, backspace state
+- Font size, font family, timer duration
 
 ## Future Development Notes
 

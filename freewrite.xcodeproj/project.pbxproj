@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		2800F7412DA1CEA0008FE5F9 /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 2800F7402DA1CE9A008FE5F9 /* .gitignore */; };
+		31CFBE842FD739CC00D051C8 /* GlassStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31CFBE832FD739CB00D051C8 /* GlassStyle.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,9 +30,10 @@
 
 /* Begin PBXFileReference section */
 		2800F7402DA1CE9A008FE5F9 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
-		2857D4702D5F8A8000EE1012 /* freewrite.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = freewrite.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2857D4702D5F8A8000EE1012 /* Think IN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Think IN.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2857D4812D5F8A8100EE1012 /* freewriteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = freewriteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2857D48B2D5F8A8100EE1012 /* freewriteUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = freewriteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		31CFBE832FD739CB00D051C8 /* GlassStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassStyle.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -85,13 +87,14 @@
 				2857D4842D5F8A8100EE1012 /* freewriteTests */,
 				2857D48E2D5F8A8100EE1012 /* freewriteUITests */,
 				2857D4712D5F8A8000EE1012 /* Products */,
+				31CFBE832FD739CB00D051C8 /* GlassStyle.swift */,
 			);
 			sourceTree = "<group>";
 		};
 		2857D4712D5F8A8000EE1012 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				2857D4702D5F8A8000EE1012 /* freewrite.app */,
+				2857D4702D5F8A8000EE1012 /* Think IN.app */,
 				2857D4812D5F8A8100EE1012 /* freewriteTests.xctest */,
 				2857D48B2D5F8A8100EE1012 /* freewriteUITests.xctest */,
 			);
@@ -101,9 +104,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		2857D46F2D5F8A8000EE1012 /* freewrite */ = {
+		2857D46F2D5F8A8000EE1012 /* Think IN */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 2857D4952D5F8A8100EE1012 /* Build configuration list for PBXNativeTarget "freewrite" */;
+			buildConfigurationList = 2857D4952D5F8A8100EE1012 /* Build configuration list for PBXNativeTarget "Think IN" */;
 			buildPhases = (
 				2857D46C2D5F8A8000EE1012 /* Sources */,
 				2857D46D2D5F8A8000EE1012 /* Frameworks */,
@@ -116,11 +119,11 @@
 			fileSystemSynchronizedGroups = (
 				2857D4722D5F8A8000EE1012 /* freewrite */,
 			);
-			name = freewrite;
+			name = "Think IN";
 			packageProductDependencies = (
 			);
 			productName = freewrite;
-			productReference = 2857D4702D5F8A8000EE1012 /* freewrite.app */;
+			productReference = 2857D4702D5F8A8000EE1012 /* Think IN.app */;
 			productType = "com.apple.product-type.application";
 		};
 		2857D4802D5F8A8100EE1012 /* freewriteTests */ = {
@@ -206,7 +209,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				2857D46F2D5F8A8000EE1012 /* freewrite */,
+				2857D46F2D5F8A8000EE1012 /* Think IN */,
 				2857D4802D5F8A8100EE1012 /* freewriteTests */,
 				2857D48A2D5F8A8100EE1012 /* freewriteUITests */,
 			);
@@ -243,6 +246,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				31CFBE842FD739CC00D051C8 /* GlassStyle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -265,12 +269,12 @@
 /* Begin PBXTargetDependency section */
 		2857D4832D5F8A8100EE1012 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 2857D46F2D5F8A8000EE1012 /* freewrite */;
+			target = 2857D46F2D5F8A8000EE1012 /* Think IN */;
 			targetProxy = 2857D4822D5F8A8100EE1012 /* PBXContainerItemProxy */;
 		};
 		2857D48D2D5F8A8100EE1012 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 2857D46F2D5F8A8000EE1012 /* freewrite */;
+			target = 2857D46F2D5F8A8000EE1012 /* Think IN */;
 			targetProxy = 2857D48C2D5F8A8100EE1012 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -402,13 +406,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"freewrite/Preview Content\"";
-				DEVELOPMENT_TEAM = 2UDAY4J48G;
+				DEVELOPMENT_TEAM = 4DYAYH5W23;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Freewrite needs camera access to record video entries.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Freewrite needs microphone access to record audio with your video entries.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Freewrite uses speech recognition to show live captions while recording.";
+				INFOPLIST_KEY_CFBundleDisplayName = "Think IN";
+				"INFOPLIST_KEY_CFBundleDisplayName[sdk=*]" = "Think IN";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -447,13 +450,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"freewrite/Preview Content\"";
-				DEVELOPMENT_TEAM = 2UDAY4J48G;
+				DEVELOPMENT_TEAM = 4DYAYH5W23;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Freewrite needs camera access to record video entries.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Freewrite needs microphone access to record audio with your video entries.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Freewrite uses speech recognition to show live captions while recording.";
+				INFOPLIST_KEY_CFBundleDisplayName = "Think IN";
+				"INFOPLIST_KEY_CFBundleDisplayName[sdk=*]" = "Think IN";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -582,7 +584,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		2857D4952D5F8A8100EE1012 /* Build configuration list for PBXNativeTarget "freewrite" */ = {
+		2857D4952D5F8A8100EE1012 /* Build configuration list for PBXNativeTarget "Think IN" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				2857D4962D5F8A8100EE1012 /* Debug */,

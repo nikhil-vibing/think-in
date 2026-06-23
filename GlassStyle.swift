@@ -37,6 +37,17 @@ extension View {
     }
 }
 
+extension View {
+    @ViewBuilder
+    func freewriteGlassID<ID: Hashable>(_ id: ID, in namespace: Namespace.ID) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffectID(id, in: namespace)
+        } else {
+            self
+        }
+    }
+}
+
 struct FreewriteGlassContainer<Content: View>: View {
     private let spacing: CGFloat?
     private let content: () -> Content

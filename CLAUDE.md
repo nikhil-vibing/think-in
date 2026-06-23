@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Freewrite - Technical Documentation for AI Agents
 
 > **⚠️ IMPORTANT FOR AI AGENTS**: This file (`AGENTS.md`) and `CLAUDE.md` are clones and must be kept in sync.
@@ -12,16 +16,15 @@
 
 ### What is Freewrite?
 
-Freewrite is a **distraction-free writing environment** for macOS designed around the concept of stream-of-consciousness writing and video journaling. The core philosophy is to remove barriers between thought and writing by creating a minimalist, opinionated interface that prioritizes the act of writing over formatting, organization, or editing.
+Freewrite is a **distraction-free writing environment** for macOS designed around the concept of stream-of-consciousness writing. The core philosophy is to remove barriers between thought and writing by creating a minimalist, opinionated interface that prioritizes the act of writing over formatting, organization, or editing.
 
 ### User Experience Philosophy
 
 **Core Principles:**
-1. **No Backspace (Optional)**: Users can disable the backspace key to encourage forward-thinking writing without self-editing
-2. **Timed Sessions**: Built-in timer (default 15 minutes) creates focused writing sprints
-3. **Auto-Everything**: Auto-save, auto-new-entry, auto-timestamp - the app manages logistics so users can focus on writing
-4. **Local-First**: All data stays on the user's machine in plain markdown files they can access directly
-5. **Minimal UI**: Most UI elements hide during timed sessions, leaving only the text
+1. **Timed Sessions**: Built-in timer (default 15 minutes) creates focused writing sprints
+2. **Auto-Everything**: Auto-save, auto-new-entry, auto-timestamp - the app manages logistics so users can focus on writing
+3. **Local-First**: All data stays on the user's machine in plain markdown files they can access directly
+4. **Minimal UI**: Most UI elements hide during timed sessions, leaving only the text
 
 ### Use Cases
 
@@ -30,18 +33,18 @@ Freewrite is a **distraction-free writing environment** for macOS designed aroun
 - The app creates a new entry automatically at the start of each day
 - Writing is saved continuously with no manual save action
 - Timer creates urgency and prevents over-editing
-- Backspace disable forces forward momentum in thinking
+- Minimal controls and timed sessions encourage forward momentum without blocking standard editing keys
 
-**Secondary Use Case - Video Journaling:**
-- Quick video capture for visual thoughts/ideas
-- Video entries stored alongside text entries in chronological history
-- One-click recording with built-in timer
-- Local storage ensures privacy for personal video journals
+**Founder Use Case - Startup Signal Freewriting:**
+- Founder-focused freewriting is now the default product posture; there is no separate writing mode toggle
+- Empty entries show founder prompts focused on customer signal, problems, shaky assumptions, wedges, and fast experiments
+- Entries remain blank markdown files; prompts are placeholders only and are never inserted into saved text
 
-**Tertiary Use Case - AI-Assisted Reflection:**
-- "Chat" button sends writing to ChatGPT or Claude
-- Prompts designed to help users reflect on and understand their writing
-- AI provides feedback, questions, or analysis of stream-of-consciousness text
+**Secondary Use Case - AI-Assisted Reflection via MCP:**
+- The app registers a local MCP server (`ThinkINMCPServer`) with Claude Code via the `cpu` icon → MCPConnectionView popover
+- Claude Code (or any MCP-compatible client) can then list, search, read, append to, and create entries directly in `~/Documents/Freewrite/`
+- The MCP server also exposes five thinking-mode prompts (journal_reflection, idea_critique, research_frame, peace_perspective, decision_clarity) so users can invoke structured reflection workflows from their AI client
+- Write access is gated by a toggle in the app's MCP settings popover
 
 **Hidden Power Feature - Long-Form Writing:**
 - Despite minimalist interface, supports full markdown
@@ -51,7 +54,7 @@ Freewrite is a **distraction-free writing environment** for macOS designed aroun
 
 ## Overview
 
-Freewrite is a native macOS writing application built with SwiftUI that allows users to write text entries and record video entries. All data is stored locally in `~/Documents/Freewrite/`.
+Freewrite is a native macOS writing application built with SwiftUI that allows users to write text entries. All data is stored locally in `~/Documents/Freewrite/`. The app pairs with a local MCP server (`ThinkINMCPServer`) that exposes entries to Claude Code and other MCP-compatible AI clients.
 
 ## Architecture
 
@@ -60,7 +63,6 @@ Freewrite is a native macOS writing application built with SwiftUI that allows u
 - **Minimum macOS Version**: 14.0
 - **Language**: Swift 5.0
 - **Build System**: Xcode
-- **Media**: AVFoundation for camera/video recording
 
 ### Project Structure
 
@@ -68,32 +70,32 @@ Freewrite is a native macOS writing application built with SwiftUI that allows u
 freewrite/
 ├── freewrite.xcodeproj/          # Xcode project file
 ├── freewrite/
-│   ├── freewriteApp.swift        # App entry point
-│   ├── ContentView.swift         # Main view (1400+ lines)
-│   ├── VideoRecordingView.swift  # Video recording interface
-│   ├── VideoPlayerView.swift     # Video playback interface
-│   └── freewrite.entitlements    # App permissions
+│   ├── freewriteApp.swift        # App entry point; ContentView is self-contained (no EnvironmentObject injection)
+│   ├── GlassStyle.swift          # Shared Liquid Glass/fallback styling helpers
+│   ├── ContentView.swift         # Main view (~430 lines, text-only)
+│   ├── MCPSettingsStore.swift    # ObservableObject; writeEnabled flag; reads/writes mcp-config.json
+│   ├── MCPConnectionView.swift   # Settings popover (cpu icon): write toggle, connection status, Connect/Disconnect
+│   ├── freewrite.entitlements    # App permissions (emptied — no sandbox, no camera/mic/speech)
+│   └── default.md
+├── ThinkINMCPServer/             # Standalone Swift Package (Swift 6) — MCP server
+│   ├── Package.swift             # swift-tools-version: 6.0; depends on swift-sdk MCP
+│   └── Sources/ThinkINMCPServer/main.swift  # StdioTransport server; 6 tools + 5 prompts
 ├── CLAUDE.md                     # This file
 └── AGENTS.md                     # Duplicate of this file
 ```
 
 ## Data Model
 
-### Entry Types
+### Entry Type
+
+All entries are text-only. The `EntryType` enum and `videoFilename` field have been removed.
 
 ```swift
-enum EntryType {
-    case text
-    case video
-}
-
-struct HumanEntry: Identifiable {
+struct HumanEntry: Identifiable, Equatable {
     let id: UUID
     let date: String              // Display format: "MMM d" (e.g., "Feb 20")
     let filename: String          // Format: [UUID]-[YYYY-MM-DD-HH-mm-ss].md
-    var previewText: String       // First 30 chars or "Video Entry"
-    var entryType: EntryType      // .text or .video
-    var videoFilename: String?    // Format: [UUID]-[YYYY-MM-DD-HH-mm-ss].mov
+    var previewText: String       // First 30 chars of content
 }
 ```
 
@@ -107,22 +109,72 @@ struct HumanEntry: Identifiable {
 - Content: Plain UTF-8 text
 - Example: `[6910BBDE-75FC-415C-ABB9-C76644B037B2]-[2026-02-20-08-01-04].md`
 
-**Video Entries**:
-- Format: QuickTime Movie (.mov)
-- Naming: `[UUID]-[YYYY-MM-DD-HH-mm-ss].mov`
-- Metadata: Corresponding `.md` file with "Video Entry" text in `~/Documents/Freewrite/`
-- Storage layout: `~/Documents/Freewrite/Videos/[UUID]-[YYYY-MM-DD-HH-mm-ss]/`
-- Directory contents:
-  - `[UUID]-[YYYY-MM-DD-HH-mm-ss].mov`
-  - `thumbnail.jpg`
-  - `transcript.md` (optional; speech transcript for that recording)
-- Example directory: `~/Documents/Freewrite/Videos/[6910BBDE-75FC-415C-ABB9-C76644B037B2]-[2026-02-20-08-01-04]/`
+**Legacy Video Metadata** (on disk, hidden from UI):
+- `.md` files whose content is exactly `"Video Entry"` are skipped by `loadExistingEntries()` and never shown in the sidebar. The actual `.mov` files and video directories remain on disk untouched.
+
+**MCP Config**:
+- `~/Library/Application Support/ThinkIN/mcp-config.json` — written by `MCPSettingsStore` when the write-access toggle changes; read by the MCP server at call time.
+
+## MCP Architecture (ThinkIN)
+
+### MCPSettingsStore
+
+`MCPSettingsStore` (`ObservableObject`) is the sole settings object in the app:
+
+```swift
+class MCPSettingsStore: ObservableObject {
+    @Published var writeEnabled: Bool
+    // Reads/writes ~/Library/Application Support/ThinkIN/mcp-config.json
+    // {"writeEnabled": true/false}
+}
+```
+
+There is no `AIProviderStore`, no `AIProvider` protocol, no Keychain usage, and no in-app AI streaming. `freewriteApp.swift` does not inject any `@EnvironmentObject`; `ContentView` is self-contained.
+
+### MCPConnectionView
+
+`MCPConnectionView` is presented from the `cpu` icon in the nav bar as a popover. It provides:
+
+- **Write-access toggle**: enables/disables write tools in the MCP server (persisted via `MCPSettingsStore`)
+- **MCP connection status indicator**: shows whether `think-in` is registered with the Claude CLI
+- **Connect Claude Code button**: runs `claude mcp add --scope user think-in -- <binary_path>`
+  - Finds `claude` CLI at `~/.local/bin/claude`, `/usr/local/bin/claude`, `/opt/homebrew/bin/claude`, or via PATH
+  - Finds server binary at `Bundle.main.url(forResource: "ThinkINMCPServer", withExtension: nil)` (production) or a development path search
+  - Verifies registration via `claude mcp list | contains("think-in")`
+- **Disconnect button**: runs `claude mcp remove think-in`
+- **Manual fallback instructions** for users who prefer to configure their MCP client by hand
+
+### MCP Server (ThinkINMCPServer)
+
+`ThinkINMCPServer/` is a standalone Swift 6 Package (separate from the Xcode project). Server name: `"ThinkIN"`.
+
+```bash
+# Build once
+cd ThinkINMCPServer && swift build -c release
+```
+
+**Six tools**: `list_entries`, `search_entries`, `read_entry`, `append_to_entry`, `create_entry` (same semantics as before), plus any newly added tool.
+
+**Five thinking-mode prompts** (via `prompts` capability):
+- `journal_reflection` — reflective journaling on an entry
+- `idea_critique` — stress-test an idea
+- `research_frame` — structure research questions around an entry
+- `peace_perspective` — reframe stressful entries with equanimity
+- `decision_clarity` — clarify a decision buried in an entry
+
+Each prompt takes a single `entry_content` argument.
+
+Write tools (`append_to_entry`, `create_entry`) are **gated** — they return an error unless the user has enabled write access in the app's MCP settings popover. The server reads `~/Library/Application Support/ThinkIN/mcp-config.json` at call time.
+
+`loadEntries()` in the MCP server skips `.md` files whose content is exactly `"Video Entry"` (legacy video metadata).
+
+All paths are scoped to `~/Documents/Freewrite/`.
 
 ## Key Components
 
 ### ContentView.swift
 
-The main view containing all UI and business logic.
+The main view containing all UI and business logic (~430 lines). `ContentView` is self-contained — no `@EnvironmentObject` dependencies.
 
 #### State Variables (Selection)
 
@@ -130,66 +182,43 @@ The main view containing all UI and business logic.
 @State private var entries: [HumanEntry] = []           // All loaded entries
 @State private var text: String = ""                    // Current text editor content
 @State private var selectedEntryId: UUID? = nil         // Currently selected entry
-@State private var showingVideoRecording = false        // Video recording overlay visibility
-@State private var currentVideoURL: URL? = nil          // Video playback URL
 @State private var showingSidebar = false               // History sidebar visibility
 @State private var colorScheme: ColorScheme = .light    // Light/dark theme
 @State private var fontSize: CGFloat = 18               // Text size (16-26px)
-@State private var selectedFont: String = "Lato-Regular"// Current font
+@State private var selectedFont: String = ...           // Resolved premium writing font preset
 @State private var timerIsRunning = false               // Timer state
 @State private var timeRemaining: Int = 900             // Timer (seconds)
-@State private var backspaceDisabled = false            // Backspace lock
+@State private var showingMCPSettings = false           // MCPConnectionView popover visibility
 ```
 
 #### Core Functions
 
 **Entry Management**:
-- `loadExistingEntries()` - Loads all .md and .mov files from documents directory
+- `loadExistingEntries()` - Loads `.md` files from documents directory; skips files whose content is exactly `"Video Entry"`
 - `createNewEntry()` - Creates new text entry
 - `saveEntry(entry:)` - Saves text to .md file
-- `loadEntry(entry:)` - Loads text or video for display
-- `deleteEntry(entry:)` - Deletes entry and associated files
-- `saveVideoEntry(from:)` - Saves recorded video and creates metadata
+- `loadEntry(entry:)` - Loads text content for display
+- `deleteEntry(entry:)` - Deletes entry file
 
 **Important**: When modifying the `entries` array from async contexts, wrap in `DispatchQueue.main.async` to prevent collection mutation crashes.
 
-### VideoRecordingView.swift
+### MCPSettingsStore.swift
 
-Handles camera access and video recording.
+`ObservableObject` that owns the write-access gate. Reads and writes `~/Library/Application Support/ThinkIN/mcp-config.json` on every toggle change. The MCP server reads this file at call time to decide whether write tools are permitted.
 
-#### CameraManager Class
+### MCPConnectionView.swift
 
-```swift
-class CameraManager: NSObject, ObservableObject {
-    @Published var isRecording = false
-    @Published var recordingTime: Int = 0
-    @Published var permissionGranted = false
+SwiftUI popover presented from the `cpu` nav icon. Handles the full Connect/Disconnect lifecycle for registering the bundled `ThinkINMCPServer` binary with the Claude CLI (see MCP Architecture section for details).
 
-    private var captureSession: AVCaptureSession?
-    private var videoOutput: AVCaptureMovieFileOutput?
-    private var previewLayer: AVCaptureVideoPreviewLayer?
-}
-```
+### GlassStyle.swift
 
-**Key Methods**:
-- `setupCamera()` - Configures AVCaptureSession with video/audio inputs
-- `startRecording(to:)` - Begins recording to temporary file
-- `stopRecording()` - Stops recording and triggers completion handler
-- `cleanup()` - Releases camera resources
+Centralizes the app's Apple Liquid Glass design-system helpers.
 
-**Critical**: Always use `beginConfiguration()` and `commitConfiguration()` when modifying AVCaptureSession to prevent crashes.
-**UI Pattern**: The recorder is rendered as an immersive edge-to-edge overlay with a transparent bottom nav and a floating circular record control.
-
-### VideoPlayerView.swift
-
-Simple AVKit-based video player for playback.
-
-```swift
-struct VideoPlayerView: View {
-    let videoURL: URL
-    @State private var player: AVPlayer?
-}
-```
+- `freewriteGlassPanel(cornerRadius:interactive:)` applies Liquid Glass on macOS 26+ and falls back to `ultraThinMaterial` on older macOS versions
+- `freewriteGlassBand(interactive:)` applies full-height/sidebar glass bands with the same fallback behavior
+- `FreewriteGlassContainer(spacing:)` groups nearby glass elements so related controls resolve as one Liquid Glass system
+- Interactive controls such as bottom-nav clusters should pass `interactive: true`; passive panels such as popovers and sidebars should usually remain non-interactive
+- Avoid adding opaque nested backgrounds inside glass surfaces; use very low-opacity fills for selected/hover states so the glass material remains visible
 
 ## UI Layout
 
@@ -199,107 +228,66 @@ struct VideoPlayerView: View {
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
 │                    Text Editor Area                     │
-│              (or Video Player if video)                 │
 │                                                         │
 ├─────────────────────────────────────────────────────────┤
 │  Bottom Nav Bar:                                        │
-│  [16px] • [Lato] • [Arial] • [System] • [Serif] • ...  │
-│  ... [15:00] • [🎥] • [Chat] • [Backspace] • [...]     │
+│  [16px] • [Toggle Font]                                │
+│  ... [15:00] • [cpu] • [Fullscreen] • [New] • [Theme] • [History]  │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ### Sidebar (History)
 
 ```
-┌──────────────┐
-│   History    │
-├──────────────┤
-│ 📹 Video...  │ ← Video entry with thumbnail
-│ Feb 20       │
-├──────────────┤
-│ This is a... │ ← Text entry with preview
-│ Feb 19       │
-├──────────────┤
-│ Another ...  │
-│ Feb 18       │
-└──────────────┘
+┌────────────────────────────┐
+│ History              📁  × │
+│ 12 entries • Local markdown│
+├────────────────────────────┤
+│ ▌ [doc]  Entry preview     │ ← click row to open
+│          Jun 8   Text      │ ← date metadata
+│   [doc]  Text preview      │ ← hover row for export/delete actions
+│          Jun 5   Text      │
+└────────────────────────────┘
 ```
 
 ## Navigation Bar Items
 
 ### Left Side (Font Controls)
 - **Font Size**: Cycles through [16, 18, 20, 22, 24, 26]px
-- **Font Selection**: Lato, Arial, System, Serif, Random
+- **Toggle Font**: Cycles through curated writing presets (New York, Iowan, Avenir, Lato, Mono) without showing every font name as separate UI
 - Hover changes cursor to pointing hand
-- **Video Mode Left Slot**: Replaced by `Copy Transcript` when viewing a video entry
+
+### Liquid Glass Treatment
+- Custom grouped surfaces use a local `freewriteGlassPanel(cornerRadius:interactive:)` wrapper
+- On macOS 26+, the wrapper applies SwiftUI Liquid Glass via `glassEffect(_:in:)`
+- On older macOS versions, the same wrapper falls back to `.ultraThinMaterial`
+- Apply glass to grouped surfaces, not every label: bottom nav groups, popovers, MCPConnectionView shell, and sidebar band
+- The MCPConnectionView popover uses one outer `freewriteGlassPanel`; internal regions use translucent fills so nested dark glass panels do not bury the effect
+- The history sidebar uses one background `freewriteGlassBand()` so it can sit flush against the window edge without clipped rounded corners; selected/hovered rows use translucent fills instead of opaque blocks. Rows are tappable containers rather than nested buttons, while export/delete remain separate hover actions.
+- Avoid applying separate glass effects to every history row or every small text/button because Apple warns that too many Liquid Glass effects can hurt rendering performance
 
 ### Right Side (Utilities)
 - **Timer**: Shows time remaining, click to start/stop, double-click to reset
-- **Video Camera (🎥)**: Opens immersive video recording overlay
-- **Chat**: Opens AI chat menu (ChatGPT/Claude integration)
-- **Backspace Toggle**: Enable/disable backspace key
+- **MCP Settings (cpu icon)**: Opens `MCPConnectionView` popover — write-access toggle, connection status, Connect/Disconnect Claude Code
 - **Fullscreen**: Toggle fullscreen mode
 - **New Entry**: Creates new text entry
 - **Theme Toggle**: 🌙/☀️ for dark/light mode
 - **History**: 🕐 Shows/hides sidebar
-
-## Video Recording Flow
-
-1. User clicks video camera icon (🎥)
-2. Camera icon switches to a small spinner while preflight runs
-3. App requests/validates **all required permissions**: camera + microphone + speech recognition
-4. If any permission is missing, recorder is **not** presented; a compact popover above the camera icon explains what is missing and links to System Settings
-5. Once camera session is fully ready (plus a short presentation delay), `VideoRecordingView` is rendered via `.overlay` on top of `ContentView` with animations disabled for open/close (plain swap, no transition)
-6. Camera preview fills the entire window content area edge-to-edge
-7. Transparent bottom nav appears over video with: `Close`, recording status, recording control text (`Start Recording` / `Stop Recording`), and timer
-8. User clicks "Start Recording"
-   - Recording begins to temp file
-   - Timer starts counting up
-   - Button changes to "Stop Recording"
-9. User clicks "Stop Recording"
-   - Recording stops
-   - Speech transcript is finalized (spacing + sentence endings/capitalization)
-   - `onRecordingComplete` closure called with temp URL + finalized transcript
-10. `saveVideoEntry(from:transcript:)` called
-   - Creates per-entry video directory in `~/Documents/Freewrite/Videos/[UUID]-[date]/`
-   - Video copied from temp to `~/Documents/Freewrite/Videos/[UUID]-[date]/[UUID]-[date].mov`
-   - Thumbnail generated once and saved to `~/Documents/Freewrite/Videos/[UUID]-[date]/thumbnail.jpg`
-   - Transcript saved to `~/Documents/Freewrite/Videos/[UUID]-[date]/transcript.md` when available
-   - Metadata file created: `[UUID]-[date].md` with "Video Entry"
-   - Entry added to `entries` array (on main thread), selected immediately, and loaded into the main view
-   - Playback starts automatically with audio enabled
-   - Overlay dismissed
-11. If user clicks `Close` while recording, the temp recording is discarded and no entry is created; recorder dismisses first, then camera cleanup runs on disappear
-
-## Video Playback Flow
-
-1. User clicks video entry in sidebar
-2. `loadEntry(entry:)` checks `entry.entryType`
-3. If `.video`:
-   - Sets `currentVideoURL` to video file path
-   - Clears `text`
-4. Main view checks `if let videoURL = currentVideoURL`
-5. Shows `VideoPlayerView(videoURL:)` instead of TextEditor
-6. Video auto-plays muted with standard AVKit controls
 
 ## Entry Loading Logic
 
 On app launch (`onAppear`):
 
 1. `loadExistingEntries()` called
-2. Reads all files from `~/Documents/Freewrite/`
-3. Filters for canonical `.md` entries and derives expected `.mov` name from each `.md`
-4. For each `.md` file:
+2. Reads all `.md` files from `~/Documents/Freewrite/`
+3. Skips any `.md` file whose trimmed content is exactly `"Video Entry"` (legacy video metadata)
+4. For each remaining `.md` file:
    - Extracts UUID and date from filename via regex
-   - Checks for corresponding `.mov` in this order:
-     - `~/Documents/Freewrite/Videos/[entry-base]/[entry].mov` (current layout)
-     - `~/Documents/Freewrite/Videos/[entry].mov` (legacy flat layout)
-     - `~/Documents/Freewrite/[entry].mov` (oldest legacy layout)
-   - Creates `HumanEntry` with appropriate type
+   - Reads content for sidebar preview
+   - Creates `HumanEntry`
 5. Sorts entries by date (newest first)
 6. Applies launch selection rules in order:
-   - If newest entry is a video entry: create a new text entry and select it (never open directly into video on app launch)
-   - Else if no entries: create welcome entry
+   - If no entries: create welcome entry
    - Else if no empty entry exists for today (and app is not in the single-welcome-entry state): create a new empty entry
    - Else select the most recent empty entry from today (or the welcome entry if it's the only entry)
 
@@ -318,28 +306,7 @@ Text is auto-saved on every change:
 
 ## Permissions
 
-Required entitlements in `freewrite.entitlements`:
-
-```xml
-<key>com.apple.security.app-sandbox</key>
-<true/>
-<key>com.apple.security.files.user-selected.read-write</key>
-<true/>
-<key>com.apple.security.device.camera</key>
-<true/>
-<key>com.apple.security.device.audio-input</key>
-<true/>
-<key>com.apple.security.personal-information.speech-recognition</key>
-<true/>
-```
-
-Privacy usage descriptions (in Xcode project build settings):
-
-```
-INFOPLIST_KEY_NSCameraUsageDescription = "Freewrite needs camera access to record video entries."
-INFOPLIST_KEY_NSMicrophoneUsageDescription = "Freewrite needs microphone access to record audio with your video entries."
-INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Freewrite uses speech recognition to transcribe your video entries."
-```
+`freewrite.entitlements` has been emptied. The app no longer uses the app sandbox, and all camera, microphone, and speech recognition entitlements have been removed along with their corresponding `INFOPLIST_KEY_NS*UsageDescription` build settings. No privacy usage descriptions are required.
 
 ## Technical Nuances & Implementation Details
 
@@ -349,14 +316,13 @@ The app uses a **hybrid threading approach**:
 
 1. **Main Thread**: All UI updates and `@State` mutations
 2. **Global Queue**: File I/O operations (reading/writing markdown files)
-3. **AVFoundation Queue**: Camera setup and video capture
 
 **Critical Threading Issue**:
 SwiftUI's `ForEach` creates an enumerator over the `entries` array. If you modify this array (insert, remove, replace) while the enumerator is active, you get `NSGenericException: Collection was mutated while being enumerated`.
 
 **Solution Pattern**:
 ```swift
-// When in async context (camera completion handler, DispatchQueue callback):
+// When in async context (DispatchQueue callback):
 DispatchQueue.main.async {
     self.entries.insert(newEntry, at: 0)  // Safe
 }
@@ -386,6 +352,10 @@ let mdFiles = fileURLs.filter { $0.pathExtension == "md" }
 
 // 2. Parse each .md file
 let entriesWithDates = mdFiles.compactMap { fileURL -> (entry, date, content)? in
+    // Read content — skip legacy video metadata
+    let content = try String(contentsOf: fileURL, encoding: .utf8)
+    if content.trimmingCharacters(in: .whitespacesAndNewlines) == "Video Entry" { return nil }
+
     // Extract UUID from filename using regex
     let uuidMatch = filename.range(of: "\\[(.*?)\\]", options: .regularExpression)
     let uuid = UUID(uuidString: String(filename[uuidMatch].dropFirst().dropLast()))
@@ -398,12 +368,7 @@ let entriesWithDates = mdFiles.compactMap { fileURL -> (entry, date, content)? i
     dateFormatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
     let fileDate = dateFormatter.date(from: dateString)
 
-    // Check for corresponding video
-    let videoFilename = filename.replacingOccurrences(of: ".md", with: ".mov")
-    let hasVideo = hasVideoAsset(for: videoFilename) // checks current + legacy locations
-
-    // Read content for preview
-    let content = try String(contentsOf: fileURL, encoding: .utf8)
+    // Build preview
     let preview = content.replacingOccurrences(of: "\n", with: " ")
                         .trimmingCharacters(in: .whitespacesAndNewlines)
     let truncated = preview.isEmpty ? "" : String(preview.prefix(30)) + "..."
@@ -417,13 +382,12 @@ entries = entriesWithDates
     .map { $0.entry }
 ```
 
-**Why separate .md and .mov files instead of embedding?**
+**Why plain .md files?**
 
-- User can open .md files in any text editor
-- Video files can be played in QuickTime independently
-- Easier to backup/sync text separately from large video files
+- User can open files in any text editor
+- Easy to backup and sync
 - Transparent file format for user ownership
-- Per-entry video directories keep each recording's media + thumbnail together
+- MCP server can read them directly without special parsing
 
 ### Auto-Save State Machine
 
@@ -512,141 +476,6 @@ NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
     return event
 }
 ```
-
-### Backspace Disable Mechanism
-
-**Implementation**:
-```swift
-@State private var backspaceDisabled = false
-
-NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-    if backspaceDisabled && (event.keyCode == 51 || event.keyCode == 117) {
-        return nil  // Swallow the event
-    }
-    return event
-}
-```
-
-**macOS Key Codes**:
-- 51: Delete/Backspace key
-- 117: Forward delete (fn+delete)
-
-**Why this matters**: Forces users to write without editing, embracing imperfection and maintaining flow state.
-
-### Video Recording Architecture
-
-**AVFoundation Setup Sequence**:
-
-```swift
-// 1. Create session
-captureSession = AVCaptureSession()
-
-// 2. Get devices
-let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
-let audioDevice = AVCaptureDevice.default(for: .audio)
-
-// 3. Create inputs
-let videoInput = try AVCaptureDeviceInput(device: videoDevice)
-let audioInput = try AVCaptureDeviceInput(device: audioDevice)
-
-// 4. CRITICAL: Begin configuration
-captureSession?.beginConfiguration()
-
-// 5. Configure session
-captureSession?.sessionPreset = .high
-captureSession?.addInput(videoInput)
-captureSession?.addInput(audioInput)
-
-// 6. Add output
-videoOutput = AVCaptureMovieFileOutput()
-captureSession?.addOutput(videoOutput!)
-audioDataOutput = AVCaptureAudioDataOutput()
-audioDataOutput?.setSampleBufferDelegate(self, queue: speechQueue)
-captureSession?.addOutput(audioDataOutput!)
-
-// 7. CRITICAL: Commit configuration
-captureSession?.commitConfiguration()
-
-// 8. Start running on background thread
-DispatchQueue.global(qos: .userInitiated).async {
-    self.captureSession?.startRunning()
-}
-```
-
-**Startup/Teardown Safety Rule**:
-- Trigger camera setup from a single lifecycle path (avoid duplicate `checkPermissions()` calls for the same view presentation).
-- Call `startRunning()` only once per configured session startup path.
-- Guard setup with a dedicated in-flight flag (e.g. `isSettingUpSession`) so repeated permission callbacks/onAppear events cannot run parallel setup work.
-- Attach/bind `AVCaptureVideoPreviewLayer` only after `startRunning()` completes to avoid concurrent session mutations during startup.
-- During teardown, prefer `stopRunning()` + releasing references over removing inputs/outputs while the session may still be transitioning states.
-
-**Why `beginConfiguration()` / `commitConfiguration()`?**
-
-AVCaptureSession maintains internal arrays of inputs/outputs. When you call `addInput()` or `addOutput()`, it mutates these arrays. If the session is actively running or if another thread is enumerating these arrays (for validation, etc.), you get collection mutation crash.
-
-`beginConfiguration()` tells the session: "I'm about to make multiple changes, don't validate or enumerate until I'm done."
-
-`commitConfiguration()` tells the session: "I'm done, now validate everything and update internal state."
-
-**Recording Flow**:
-
-```swift
-// Start recording
-videoOutput.startRecording(to: tempURL, recordingDelegate: self)
-
-// Delegate callback when done
-func fileOutput(_ output: AVCaptureFileOutput,
-                didFinishRecordingTo outputFileURL: URL,
-                from connections: [AVCaptureConnection],
-                error: Error?) {
-    DispatchQueue.main.async {
-        self.onRecordingComplete?(outputFileURL)
-    }
-}
-```
-
-**Temporary File Strategy**:
-- Record to temp directory: `FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("mov")`
-- On completion: Copy to permanent location
-- Why? If recording fails, temp file is auto-cleaned by OS
-
-### Speech Transcription (Speech Framework)
-
-Speech transcription in `VideoRecordingView` is implemented with Apple's `Speech` framework and runs in the background during recording:
-
-1. Request speech auth with `SFSpeechRecognizer.requestAuthorization`.
-2. Keep camera/video recording on `AVCaptureMovieFileOutput`.
-3. Add `AVCaptureAudioDataOutput` to the same capture session and stream sample buffers to speech recognition.
-4. Feed sample buffers into `SFSpeechAudioBufferRecognitionRequest` (`appendAudioSampleBuffer`).
-5. Build partial + committed transcript text while recording (no live caption overlay rendered).
-6. Finalize transcript on stop and persist it as `transcript.md` in that entry's video directory.
-
-Key details:
-- Camera, microphone, and speech recognition permissions are all required before opening the recorder.
-- If any permission is denied, the app keeps the user in the writing view and shows a compact camera-icon popover with the missing permission(s).
-- Transcription is started on recording start and stopped on recording stop.
-- Final transcript formatting is applied at stop to improve readability before saving/copying.
-- Video playback nav exposes `Copy Transcript` for saved video entries with a transcript file.
-- App sandbox requires `com.apple.security.personal-information.speech-recognition` entitlement plus `NSSpeechRecognitionUsageDescription`.
-
-### Video Thumbnail Generation Nuances
-
-```swift
-func generateVideoThumbnail(from url: URL) -> NSImage? {
-    let asset = AVAsset(url: url)
-    let imageGenerator = AVAssetImageGenerator(asset: asset)
-    imageGenerator.appliesPreferredTrackTransform = true  // CRITICAL
-
-    let cgImage = try imageGenerator.copyCGImage(at: CMTime(seconds: 0, preferredTimescale: 1), ...)
-    return NSImage(cgImage: cgImage, size: NSSize(...))
-}
-```
-
-**`appliesPreferredTrackTransform = true`**:
-
-Videos recorded on front-facing camera are often rotated 90°. The video file contains a transform matrix that says "rotate this video when playing." Without `appliesPreferredTrackTransform`, the thumbnail would be sideways.
-
-**Performance Note**: Thumbnails are generated once when a recording is saved and persisted as `thumbnail.jpg` in each entry's video directory. Sidebar rows load precomputed image files instead of extracting frames from `.mov` during render. For older entries without thumbnails, the app lazily generates once and saves for subsequent loads.
 
 ### Text Editor Header Behavior
 
@@ -830,30 +659,6 @@ DispatchQueue.main.async {
 }
 ```
 
-### AVCaptureSession Crashes
-
-**Problem**: Session internals can crash with `Collection ... was mutated while being enumerated` when session startup/teardown overlaps (for example duplicate setup/start calls or mutating inputs/outputs during active transitions).
-
-**Solution**:
-```swift
-captureSession?.beginConfiguration()
-// Add/remove inputs and outputs here
-captureSession?.sessionPreset = .high
-captureSession?.addInput(videoInput)
-captureSession?.commitConfiguration()
-```
-
-Also:
-```swift
-// Avoid duplicate startup paths for the same presentation
-// and avoid repeated startRunning() calls on the same setup cycle.
-
-if session.isRunning {
-    session.stopRunning()
-}
-// Release session/output references without input/output removal churn.
-```
-
 ### File Path Issues
 
 Always use absolute paths:
@@ -877,31 +682,22 @@ xcodebuild -project freewrite.xcodeproj -scheme freewrite -configuration Debug b
 xcodebuild -project freewrite.xcodeproj -scheme freewrite -configuration Debug clean build
 ```
 
-## Testing Video Feature
+(The README's intended workflow is simpler: open `freewrite.xcodeproj` in Xcode and click Build/Run.)
 
-1. Build and run app
-2. Grant camera/microphone permissions when prompted
-3. Click video camera icon in bottom nav
-4. Click "Start Recording" (turns red)
-5. Record for a few seconds
-6. Click "Stop Recording"
-7. Recorder overlay closes, new video entry is selected, and video opens immediately playing muted
-8. Click video entry to play it
+## Running Tests
 
-## Video Thumbnail Generation
+Tests use Apple's **Swift Testing** framework (`import Testing`, `@Test`, `#expect(...)`) — not XCTest. Targets: `freewriteTests` (unit) and `freewriteUITests` (UI). Both are largely placeholder stubs today.
 
-```swift
-func generateVideoThumbnail(from url: URL) -> NSImage? {
-    let asset = AVAsset(url: url)
-    let imageGenerator = AVAssetImageGenerator(asset: asset)
-    imageGenerator.appliesPreferredTrackTransform = true
-
-    let cgImage = try imageGenerator.copyCGImage(at: CMTime(seconds: 0, preferredTimescale: 1), actualTime: nil)
-    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-}
+**Run all tests**:
+```bash
+xcodebuild test -project freewrite.xcodeproj -scheme freewrite -destination 'platform=macOS'
 ```
 
-Generated at save time and stored in the per-entry video directory; sidebar loads this cached image file.
+**Run a single test** (target/suite/function):
+```bash
+xcodebuild test -project freewrite.xcodeproj -scheme freewrite -destination 'platform=macOS' \
+  -only-testing:freewriteTests/freewriteTests/example
+```
 
 ## Feature Flags / Settings
 
@@ -909,18 +705,9 @@ Stored in `UserDefaults`:
 - `colorScheme`: "light" or "dark"
 
 Other settings are session-only (not persisted):
-- Font size, font family, timer duration, backspace state
+- Font size, font family, timer duration
 
 ## Future Development Notes
-
-### Adding New Entry Types
-
-1. Add case to `EntryType` enum
-2. Update `HumanEntry` with relevant properties
-3. Modify `loadExistingEntries()` to detect new file type
-4. Update `loadEntry()` to handle new type
-5. Add UI in main view for new entry type
-6. Update `deleteEntry()` to clean up new file types
 
 ### Adding New Navigation Items
 
@@ -952,17 +739,20 @@ Button(action: {
 
 Enable console output in Xcode to see:
 - File loading: "Processing: [filename]"
-- Entry creation: "Successfully created video entry"
-- Errors: "Error saving video entry: ..."
+- Entry creation: "Successfully created entry"
+- Errors: "Error saving entry: ..."
 
 Check `~/Documents/Freewrite/` in Finder to verify files are being created.
 
+For MCP issues: check `~/Library/Application Support/ThinkIN/mcp-config.json` for the write-enable flag, and run `claude mcp list` in terminal to verify `think-in` registration.
+
 ## Code Organization
 
-- **Lines 1-130**: Imports, models, state variables
-- **Lines 130-430**: Computed properties and helpers
-- **Lines 430-1200**: Main view body and UI
-- **Lines 1200-1400**: Helper functions (save, load, delete, etc.)
+ContentView.swift (~430 lines total):
+- **Lines 1-80**: Imports, models, state variables
+- **Lines 80-200**: Computed properties and helpers
+- **Lines 200-350**: Main view body and UI
+- **Lines 350-430**: Helper functions (save, load, delete, etc.)
 
 ## Key SwiftUI Patterns Used
 

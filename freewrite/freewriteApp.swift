@@ -6,19 +6,26 @@
 //
 
 import SwiftUI
+import CoreText
 
 @main
 struct freewriteApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("colorScheme") private var colorSchemeString: String = "light"
-    
+
     init() {
-        // Register Lato font
-        if let fontURL = Bundle.main.url(forResource: "Lato-Regular", withExtension: "ttf") {
-            CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil)
+        let latoFonts = [
+            "Lato-Black", "Lato-BlackItalic", "Lato-Bold", "Lato-BoldItalic",
+            "Lato-Italic", "Lato-Light", "Lato-LightItalic",
+            "Lato-Regular", "Lato-Thin", "Lato-ThinItalic"
+        ]
+        for fontName in latoFonts {
+            if let fontURL = Bundle.main.url(forResource: fontName, withExtension: "ttf") {
+                CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil)
+            }
         }
     }
-     
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -32,17 +39,13 @@ struct freewriteApp: App {
     }
 }
 
-// Add AppDelegate to handle window configuration
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let window = NSApplication.shared.windows.first {
-            // Ensure window starts in windowed mode
             if window.styleMask.contains(.fullScreen) {
                 window.toggleFullScreen(nil)
             }
-            
-            // Center the window on the screen
             window.center()
         }
     }
-} 
+}
